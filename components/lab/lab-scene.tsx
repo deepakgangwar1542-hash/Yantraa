@@ -1,0 +1,672 @@
+'use client'
+
+import * as React from 'react'
+import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
+import { OrbitControls, ContactShadows, Html, Environment, Lightformer } from '@react-three/drei'
+import * as THREE from 'three'
+import { getComponent, type ShapeKind } from '@/lib/electronics-data'
+import { ComponentShape, getPinAnchors } from '@/components/lab/component-mesh'
+import type { CircuitReport, PlacedInstance, Wire, WireEnd } from '@/lib/circuit-engine'
+
+interface SceneProps {
+  placed: PlacedInstance[]
+  wires: Wire[]
+  mode: 'move' | 'wire'
+  running: boolean
+  selectedId: string | null
+  pendingWire: WireEnd | null
+  report: CircuitReport
+  pressedIds: ReadonlySet<string>
+  onSelect: (id: string) => void
+  onPinClick: (instanceId: string, pinIndex: number) => void
+  onMove: (id: string, pos: [number, number, number]) => void
+  onDragStateChange: (dragging: boolean) => void
+  onDeselect: () => void
+  onDeleteWire: (id: string) => void
+  onTogglePress: (id: string) => void
+}
+
+const DRAG_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+const SNAP = 0.25
+const snap = (v: number) => Math.round(v / SNAP) * SNAP
+
+const WIRE_COLORS = ['#e5484d', '#f5b301', '#3ba55d', '#4ea1ff', '#c084fc', '#e8eefb']
+
+type Vec3 = [number, number, number]
+
+function worldAnchor(pos: Vec3, shape: ShapeKind, pinIndex: number): Vec3 {
+  const anchors = getPinAnchors(shape)
+  const a = anchors[pinIndex] ?? anchors[0]
+  return [pos[0] + a[0], a[1], pos[2] + a[2]]
+}
+
+/** Keeps the canvas alive if the GPU context is briefly lost and restored. */
+function ContextRecovery() {
+  const { gl, invalidate, size } = useThree()
+  React.useEffect(() => {
+    const canvas = gl.domElement
+    // preventDefault() on contextlost is REQUIRED for the browser to fire
+    // contextrestored afterwards; without it the canvas stays permanently blank.
+    const onLost = (e: Event) => e.preventDefault()
+    const onRestored = () => {
+      // Nudge the renderer to fully rebuild its GL state, then repaint over
+      // several frames so the scene reappears instead of staying blank.
+      gl.setSize(size.width, size.height)
+      invalidate()
+      requestAnimationFrame(() => invalidate())
+      requestAnimationFrame(() => invalidate())
+    }
+    canvas.addEventListener('webglcontextlost', onLost as EventListener, false)
+    canvas.addEventListener('webglcontextrestored', onRestored, false)
+    return () => {
+      canvas.removeEventListener('webglcontextlost', onLost as EventListener)
+      canvas.removeEventListener('webglcontextrestored', onRestored)
+    }
+  }, [gl, invalidate, size.width, size.height])
+  return null
+}
+
+/** Procedural breadboard top texture (holes, trench, power rails). */
+function useBreadboardTexture() {
+  return React.useMemo(() => {
+    const c = document.createElement('canvas')
+    c.width = 1024
+    c.height = 683
+    const ctx = c.getContext('2d')
+    if (!ctx) return null
+    // base
+    ctx.fillStyle = '#e9e3d2'
+    ctx.fillRect(0, 0, c.width, c.height)
+    // subtle top shading
+    const grad = ctx.createLinearGradient(0, 0, 0, c.height)
+    grad.addColorStop(0, 'rgba(255,255,255,0.25)')
+    grad.addColorStop(1, 'rgba(0,0,0,0.08)')
+    ctx.fillStyle = grad
+    ctx.fillRect(0, 0, c.width, c.height)
+    // power rails
+    const rail = (y: number, color: string) => {
+      ctx.strokeStyle = color
+      ctx.lineWidth = 4
+      ctx.beginPath()
+      ctx.moveTo(60, y)
+      ctx.lineTo(c.width - 60, y)
+      ctx.stroke()
+    }
+    rail(46, '#d94b4b')
+    rail(72, '#3b6fd9')
+    rail(c.height - 72, '#d94b4b')
+    rail(c.height - 46, '#3b6fd9')
+    // center trench
+    ctx.fillStyle = 'rgba(0,0,0,0.10)'
+    ctx.fillRect(0, c.height / 2 - 26, c.width, 52)
+    // hole grid
+    ctx.fillStyle = '#3a3730'
+    const startX = 70
+    const stepX = (c.width - 140) / 30
+    const rows = [110, 150, 190, 230, 270, c.height - 270, c.height - 230, c.height - 190, c.height - 150, c.height - 110]
+    for (let i = 0; i <= 30; i++) {
+      for (const ry of rows) {
+        ctx.beginPath()
+        ctx.rect(startX + i * stepX - 3, ry - 3, 6, 6)
+        ctx.fill()
+      }
+    }
+    const tex = new THREE.CanvasTexture(c)
+    tex.anisotropy = 4
+    tex.needsUpdate = true
+    return tex
+  }, [])
+}
+
+function Breadboard() {
+  const tex = useBreadboardTexture()
+  return (
+    <group>
+      {/* desk */}
+      <mesh position={[0, -0.6, 0]} receiveShadow>
+        <boxGeometry args={[26, 1, 18]} />
+        <meshStandardMaterial color="#2a2118" roughness={0.85} metalness={0.05} />
+      </mesh>
+      {/* breadboard body */}
+      <mesh position={[0, -0.16, 0]} receiveShadow castShadow>
+        <boxGeometry args={[12.4, 0.32, 8.4]} />
+        <meshStandardMaterial color="#d9d2c0" roughness={0.6} />
+      </mesh>
+      {/* breadboard printed top */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.005, 0]} receiveShadow>
+        <planeGeometry args={[12.4, 8.4]} />
+        {tex ? (
+          <meshStandardMaterial map={tex} roughness={0.65} />
+        ) : (
+          <meshStandardMaterial color="#e9e3d2" roughness={0.65} />
+        )}
+      </mesh>
+    </group>
+  )
+}
+
+function WireTube({
+  start,
+  end,
+  color,
+  interactive,
+  onDelete,
+}: {
+  start: Vec3
+  end: Vec3
+  color: string
+  interactive: boolean
+  onDelete: () => void
+}) {
+  const geometry = React.useMemo(() => {
+    const s = new THREE.Vector3(...start)
+    const e = new THREE.Vector3(...end)
+    const dist = s.distanceTo(e)
+    const mid = s.clone().lerp(e, 0.5)
+    mid.y += 0.35 + dist * 0.18
+    const curve = new THREE.QuadraticBezierCurve3(s, mid, e)
+    return new THREE.TubeGeometry(curve, 24, 0.05, 10, false)
+  }, [start, end])
+
+  const [hovered, setHovered] = React.useState(false)
+
+  React.useEffect(() => () => geometry.dispose(), [geometry])
+
+  return (
+    <group>
+      <mesh
+        geometry={geometry}
+        castShadow
+        onClick={
+          interactive
+            ? (e: ThreeEvent<MouseEvent>) => {
+                e.stopPropagation()
+                onDelete()
+              }
+            : undefined
+        }
+        onPointerOver={
+          interactive
+            ? (e: ThreeEvent<PointerEvent>) => {
+                e.stopPropagation()
+                setHovered(true)
+                document.body.style.cursor = 'pointer'
+              }
+            : undefined
+        }
+        onPointerOut={() => {
+          setHovered(false)
+          document.body.style.cursor = 'auto'
+        }}
+      >
+        <meshStandardMaterial
+          color={hovered ? '#ffffff' : color}
+          emissive={hovered ? '#ffffff' : '#000000'}
+          emissiveIntensity={hovered ? 0.55 : 0}
+          roughness={0.35}
+          metalness={0.1}
+        />
+      </mesh>
+      {[start, end].map((p, i) => (
+        <mesh key={i} position={p}>
+          <sphereGeometry args={[0.07, 12, 12]} />
+          <meshStandardMaterial color="#111827" metalness={0.5} roughness={0.4} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+/** Dashed guide line from the pending wire pin to the cursor position. */
+function PendingWirePreview({ from }: { from: Vec3 }) {
+  const { pointer, camera } = useThree()
+  const raycaster = React.useMemo(() => new THREE.Raycaster(), [])
+  const hit = React.useMemo(() => new THREE.Vector3(), [])
+  const line = React.useMemo(() => {
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3))
+    const material = new THREE.LineBasicMaterial({
+      color: '#f5b301',
+      transparent: true,
+      opacity: 0.65,
+      toneMapped: false,
+    })
+    return new THREE.Line(g, material)
+  }, [])
+
+  useFrame(() => {
+    const attr = line.geometry.getAttribute('position') as THREE.BufferAttribute
+    attr.setXYZ(0, from[0], from[1], from[2])
+    raycaster.setFromCamera(pointer, camera)
+    if (raycaster.ray.intersectPlane(DRAG_PLANE, hit)) {
+      attr.setXYZ(1, hit.x, Math.max(hit.y, 0), hit.z)
+    } else {
+      attr.setXYZ(1, from[0], from[1], from[2])
+    }
+    attr.needsUpdate = true
+  })
+
+  React.useEffect(
+    () => () => {
+      line.geometry.dispose()
+      ;(line.material as THREE.Material).dispose()
+    },
+    [line],
+  )
+
+  return <primitive object={line} />
+}
+
+function Draggable({
+  position,
+  enabled,
+  onMove,
+  onSelect,
+  onActivate,
+  onDragStateChange,
+  children,
+}: {
+  position: Vec3
+  enabled: boolean
+  onMove: (pos: Vec3) => void
+  onSelect: () => void
+  onActivate?: () => void
+  onDragStateChange: (dragging: boolean) => void
+  children: React.ReactNode
+}) {
+  const { camera, gl } = useThree()
+  const draggingRef = React.useRef(false)
+  const movedRef = React.useRef(false)
+  const raycaster = React.useMemo(() => new THREE.Raycaster(), [])
+  const pointer = React.useMemo(() => new THREE.Vector2(), [])
+  const intersection = React.useMemo(() => new THREE.Vector3(), [])
+  const [hovered, setHovered] = React.useState(false)
+
+  React.useEffect(() => {
+    if (!enabled) return
+    const dom = gl.domElement
+
+    const handleMove = (e: PointerEvent) => {
+      if (!draggingRef.current) return
+      movedRef.current = true
+      const rect = dom.getBoundingClientRect()
+      pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+      pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+      raycaster.setFromCamera(pointer, camera)
+      if (raycaster.ray.intersectPlane(DRAG_PLANE, intersection)) {
+        const clampedX = Math.max(-5.5, Math.min(5.5, snap(intersection.x)))
+        const clampedZ = Math.max(-3.5, Math.min(3.5, snap(intersection.z)))
+        onMove([clampedX, 0, clampedZ])
+      }
+    }
+    const handleUp = () => {
+      if (!draggingRef.current) return
+      draggingRef.current = false
+      onDragStateChange(false)
+      document.body.style.cursor = 'auto'
+    }
+
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleUp)
+    return () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+    }
+  }, [enabled, camera, gl, onMove, onDragStateChange, raycaster, pointer, intersection])
+
+  return (
+    <group
+      position={position}
+      onPointerDown={(e: ThreeEvent<PointerEvent>) => {
+        e.stopPropagation()
+        movedRef.current = false
+        onSelect()
+        if (enabled) {
+          draggingRef.current = true
+          onDragStateChange(true)
+          document.body.style.cursor = 'grabbing'
+        }
+      }}
+      onClick={(e: ThreeEvent<MouseEvent>) => {
+        e.stopPropagation()
+        // A pure click (no drag) on a button activates it.
+        if (!movedRef.current) onActivate?.()
+      }}
+      onPointerOver={(e) => {
+        e.stopPropagation()
+        setHovered(true)
+        document.body.style.cursor = enabled ? 'grab' : 'pointer'
+      }}
+      onPointerOut={() => {
+        setHovered(false)
+        if (!draggingRef.current) document.body.style.cursor = 'auto'
+      }}
+      scale={hovered ? 1.03 : 1}
+    >
+      {children}
+    </group>
+  )
+}
+
+function InstanceLabel({ text }: { text: string }) {
+  return (
+    <Html position={[0, 1.25, 0]} center distanceFactor={9} pointerEvents="none">
+      <div
+        style={{
+          padding: '2px 8px',
+          borderRadius: 6,
+          background: 'rgba(11, 18, 32, 0.85)',
+          color: '#ffffff',
+          fontSize: 13,
+          fontWeight: 600,
+          whiteSpace: 'nowrap',
+          fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
+          userSelect: 'none',
+        }}
+      >
+        {text}
+      </div>
+    </Html>
+  )
+}
+
+/** Clickable pin pads. In Wire mode they are the wiring endpoints. */
+function Pins({
+  shape,
+  names,
+  wireMode,
+  showLabels,
+  instanceId,
+  pending,
+  onPinClick,
+}: {
+  shape: ShapeKind
+  names: string[]
+  wireMode: boolean
+  showLabels: boolean
+  instanceId: string
+  pending: WireEnd | null
+  onPinClick: (pinIndex: number) => void
+}) {
+  const anchors = getPinAnchors(shape)
+  const [hoveredIdx, setHoveredIdx] = React.useState<number | null>(null)
+  const pendingHere = pending?.instanceId === instanceId ? pending.pinIndex : null
+
+  return (
+    <>
+      {anchors.map((a, i) => {
+        const isPending = pendingHere === i
+        const isHovered = hoveredIdx === i
+        const showLabel = isPending || (wireMode && (showLabels || isHovered))
+        return (
+          <group key={i} position={a}>
+            {/* Invisible oversized hit target: pads are small (a hand cursor is
+                less precise than a mouse), so catch clicks within a generous
+                radius around the pad while the visible sphere stays tiny. */}
+            <mesh
+              onClick={(e: ThreeEvent<MouseEvent>) => {
+                e.stopPropagation()
+                if (wireMode) onPinClick(i)
+              }}
+              onPointerOver={
+                wireMode
+                  ? (e: ThreeEvent<PointerEvent>) => {
+                      e.stopPropagation()
+                      setHoveredIdx(i)
+                      document.body.style.cursor = 'pointer'
+                    }
+                  : undefined
+              }
+              onPointerOut={() => {
+                setHoveredIdx(null)
+                document.body.style.cursor = 'auto'
+              }}
+            >
+              <sphereGeometry args={[0.26, 12, 12]} />
+              <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+            </mesh>
+            <mesh
+              scale={isPending ? 1.9 : isHovered ? 1.55 : 1}
+              onClick={(e: ThreeEvent<MouseEvent>) => {
+                e.stopPropagation()
+                if (wireMode) onPinClick(i)
+              }}
+              onPointerOver={
+                wireMode
+                  ? (e: ThreeEvent<PointerEvent>) => {
+                      e.stopPropagation()
+                      setHoveredIdx(i)
+                      document.body.style.cursor = 'pointer'
+                    }
+                  : undefined
+              }
+              onPointerOut={() => {
+                setHoveredIdx(null)
+                document.body.style.cursor = 'auto'
+              }}
+            >
+              <sphereGeometry args={[0.08, 16, 16]} />
+              <meshBasicMaterial
+                color={isPending ? '#ffd34d' : isHovered ? '#ffffff' : '#f5b301'}
+                toneMapped={false}
+              />
+            </mesh>
+            {showLabel && (
+              <Html
+                position={[0, isPending ? 0.3 : 0.24, 0]}
+                center
+                distanceFactor={7}
+                pointerEvents="none"
+              >
+                <div
+                  style={{
+                    padding: '1px 6px',
+                    borderRadius: 5,
+                    background: isPending ? 'rgba(255, 211, 77, 0.95)' : 'rgba(245, 179, 1, 0.92)',
+                    color: '#1a1200',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    whiteSpace: 'nowrap',
+                    fontFamily: "'Segoe UI', system-ui, sans-serif",
+                    userSelect: 'none',
+                  }}
+                >
+                  {isPending ? '→ ' : ''}
+                  {names[i] ?? `Pin ${i + 1}`}
+                </div>
+              </Html>
+            )}
+          </group>
+        )
+      })}
+    </>
+  )
+}
+
+function SelectionRing({ color }: { color: string }) {
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
+      <ringGeometry args={[0.8, 0.95, 44]} />
+      <meshBasicMaterial color={color} transparent opacity={0.9} side={THREE.DoubleSide} />
+    </mesh>
+  )
+}
+
+export function LabScene({
+  placed,
+  wires,
+  mode,
+  running,
+  selectedId,
+  pendingWire,
+  report,
+  pressedIds,
+  onSelect,
+  onPinClick,
+  onMove,
+  onDragStateChange,
+  onDeselect,
+  onDeleteWire,
+  onTogglePress,
+}: SceneProps) {
+  const [dragging, setDragging] = React.useState(false)
+
+  const handleDragState = React.useCallback(
+    (d: boolean) => {
+      setDragging(d)
+      onDragStateChange(d)
+    },
+    [onDragStateChange],
+  )
+
+  const instById = React.useMemo(() => {
+    const map = new Map<string, PlacedInstance>()
+    placed.forEach((p) => map.set(p.instanceId, p))
+    return map
+  }, [placed])
+
+  return (
+    <Canvas
+      shadows
+      camera={{ position: [7, 7, 7], fov: 45 }}
+      dpr={[1, 2]}
+      gl={{ antialias: true, toneMappingExposure: 1.05 }}
+      onPointerMissed={() => onDeselect()}
+    >
+      <ContextRecovery />
+      <color attach="background" args={['#0e1626']} />
+      <fog attach="fog" args={['#0e1626', 20, 38]} />
+
+      {/* Lighting: desk-lamp key + soft fill */}
+      <hemisphereLight args={['#dfe8ff', '#1a1712', 0.5]} />
+      <directionalLight
+        position={[5, 9, 4]}
+        intensity={1.15}
+        color="#fff4e0"
+        castShadow
+        shadow-mapSize={[2048, 2048]}
+        shadow-camera-left={-10}
+        shadow-camera-right={10}
+        shadow-camera-top={10}
+        shadow-camera-bottom={-10}
+        shadow-bias={-0.0004}
+      />
+      <directionalLight position={[-6, 5, -5]} intensity={0.35} color="#6f9bff" />
+      <pointLight position={[0, 6, 2]} intensity={0.4} color="#fff4e0" />
+
+      {/* Procedural studio env for real reflections on metal/plastic.
+          Renders once (frames={1}); no HDRI network fetch. */}
+      <Environment resolution={256} frames={1}>
+        <color attach="background" args={['#0a0f1a']} />
+        <Lightformer
+          intensity={1.4}
+          position={[0, 6, 0]}
+          rotation={[Math.PI / 2, 0, 0]}
+          scale={[10, 10, 1]}
+          color="#fff4e0"
+        />
+        <Lightformer intensity={0.7} position={[-6, 2, 3]} scale={[3, 8, 1]} color="#6f9bff" />
+        <Lightformer intensity={0.6} position={[6, 2, -3]} scale={[3, 8, 1]} color="#8ecbff" />
+      </Environment>
+
+      <Breadboard />
+
+      {/* Wires */}
+      {wires.map((w, idx) => {
+        const a = instById.get(w.from.instanceId)
+        const b = instById.get(w.to.instanceId)
+        if (!a || !b) return null
+        const defA = getComponent(a.componentId)
+        const defB = getComponent(b.componentId)
+        if (!defA || !defB) return null
+        const start = worldAnchor(a.position, defA.shape, w.from.pinIndex)
+        const end = worldAnchor(b.position, defB.shape, w.to.pinIndex)
+        return (
+          <WireTube
+            key={w.id}
+            start={start}
+            end={end}
+            color={WIRE_COLORS[idx % WIRE_COLORS.length]}
+            interactive={mode === 'wire'}
+            onDelete={() => onDeleteWire(w.id)}
+          />
+        )
+      })}
+
+      {/* Pending wire guide line */}
+      {mode === 'wire' &&
+        pendingWire &&
+        (() => {
+          const inst = instById.get(pendingWire.instanceId)
+          if (!inst) return null
+          const def = getComponent(inst.componentId)
+          if (!def) return null
+          return <PendingWirePreview from={worldAnchor(inst.position, def.shape, pendingWire.pinIndex)} />
+        })()}
+
+      {/* Components */}
+      <React.Suspense fallback={null}>
+        {placed.map((inst) => {
+          const def = getComponent(inst.componentId)
+          if (!def) return null
+          const isSelected = selectedId === inst.instanceId
+          const st = report.states[inst.instanceId]
+          const isError = st?.status === 'error'
+          const isWarning = st?.status === 'warning'
+          const lit = running && !!st?.lit
+          const isPressed = def.id === 'button' && pressedIds.has(inst.instanceId)
+          return (
+            <Draggable
+              key={inst.instanceId}
+              position={inst.position}
+              enabled={mode === 'move'}
+              onMove={(pos) => onMove(inst.instanceId, pos)}
+              onSelect={() => onSelect(inst.instanceId)}
+              onActivate={def.id === 'button' ? () => onTogglePress(inst.instanceId) : undefined}
+              onDragStateChange={handleDragState}
+            >
+              <ComponentShape
+                shape={def.shape}
+                color={def.color}
+                active={lit}
+                pressed={isPressed}
+              />
+              <InstanceLabel text={def.name} />
+              <Pins
+                shape={def.shape}
+                names={def.pins.map((p) => p.name)}
+                wireMode={mode === 'wire'}
+                showLabels={isSelected}
+                instanceId={inst.instanceId}
+                pending={pendingWire}
+                onPinClick={(pinIndex) => onPinClick(inst.instanceId, pinIndex)}
+              />
+              {isError && <SelectionRing color="#e5484d" />}
+              {isWarning && !isError && <SelectionRing color="#f5b301" />}
+              {isSelected && !isError && !isWarning && <SelectionRing color="#4ea1ff" />}
+            </Draggable>
+          )
+        })}
+      </React.Suspense>
+
+      <ContactShadows
+        position={[0, 0.02, 0]}
+        opacity={0.45}
+        scale={18}
+        blur={2.4}
+        far={6}
+        color="#000000"
+      />
+
+      <OrbitControls
+        enabled={!dragging}
+        enableDamping
+        dampingFactor={0.08}
+        minDistance={4}
+        maxDistance={22}
+        maxPolarAngle={Math.PI / 2.15}
+        makeDefault
+      />
+    </Canvas>
+  )
+}

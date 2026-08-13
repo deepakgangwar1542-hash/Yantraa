@@ -1,0 +1,10 @@
+
+> fluent-starter@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.9 (Turbopack)
+- Local:         http://localhost:64204
+- Network:       http://192.168.0.107:64204
+✓ Ready in 1150ms
+
+ GET / 200 in 2.0s (next.js: 176ms, application-code: 1872ms)
