@@ -10,6 +10,7 @@ export type ShapeKind =
   | 'diode'
   | 'transistor'
   | 'ic'
+  | 'register'
   | 'board'
   | 'sensor'
   | 'buzzer'
@@ -264,6 +265,45 @@ export const COMPONENTS: ElectronicsComponent[] = [
     uses: ['Obstacle detection', 'Parking sensors', 'Level measurement'],
     funFact: 'It works just like a bat\u2019s echolocation, at frequencies too high to hear.',
     symbol: 'US',
+  },
+  {
+    id: 'register',
+    name: 'Shift Register (74HC595)',
+    category: 'Integrated Circuit',
+    difficulty: 'Intermediate',
+    color: '#20242e',
+    shape: 'register',
+    tagline: 'Serial in, parallel out — expands outputs',
+    summary:
+      'A shift register takes in one bit at a time on a single data line and shifts it through an internal chain, turning it into 8 parallel outputs. The 74HC595 is the classic 16-pin DIP version, and it is how a microcontroller drives many LEDs or a 7-segment display using just three wires.',
+    howItWorks:
+      'Each rising edge of the shift clock (SRCLK) shifts the bits along one position: the value on SER enters the first stage and every bit moves one step closer to QH. When the latch clock (RCLK) pulses, the 8 held bits are copied to the parallel outputs QA\u2013QH all at once. Bits pushed past QH fall out on QH\u2032, so you can daisy-chain chips for even more outputs.',
+    pins: [
+      { name: 'QB', role: 'Parallel output B' },
+      { name: 'QC', role: 'Parallel output C' },
+      { name: 'QD', role: 'Parallel output D' },
+      { name: 'QE', role: 'Parallel output E' },
+      { name: 'QF', role: 'Parallel output F' },
+      { name: 'QG', role: 'Parallel output G' },
+      { name: 'QH', role: 'Parallel output H' },
+      { name: 'GND', role: 'Ground (0V)' },
+      { name: 'QH\u2032', role: 'Cascade output — feeds the next chip' },
+      { name: '/SRCLR', role: 'Shift register clear (active low)' },
+      { name: 'SRCLK', role: 'Shift clock — shifts on rising edge' },
+      { name: 'RCLK', role: 'Latch clock — copies bits to outputs' },
+      { name: '/OE', role: 'Output enable (active low)' },
+      { name: 'SER', role: 'Serial data input' },
+      { name: 'QA', role: 'Parallel output A' },
+      { name: 'VCC', role: 'Power (5V)' },
+    ],
+    uses: [
+      'Driving many LEDs from a few pins',
+      '7-segment display drivers',
+      'Daisy-chained LED walls and matrices',
+    ],
+    funFact:
+      'With three wires you can control thousands of outputs \u2014 every 74HC595 you chain adds 8 more outputs without using another microcontroller pin.',
+    symbol: 'REG',
   },
   {
     id: 'arduino',

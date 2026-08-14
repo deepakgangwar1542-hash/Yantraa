@@ -1,0 +1,22 @@
+
+> fluent-starter@0.1.0 dev
+> next dev -p 3000
+
+▲ Next.js 16.2.9 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.0.107:3000
+✓ Ready in 1132ms
+
+  We detected TypeScript in your project and reconfigured your tsconfig.json file for you.
+  The following suggested values were added to your tsconfig.json. These values can be changed to fit your project's needs:
+
+  	- include was updated to add '.next-preview-2/types/**/*.ts'
+  	- include was updated to add '.next-preview-2/dev/types/**/*.ts'
+
+
+○ Compiling / ...
+ GET / 200 in 13.1s (next.js: 8.8s, application-code: 4.3s)
+ GET / 200 in 183ms (next.js: 13ms, application-code: 170ms)
+ GET / 200 in 129ms (next.js: 10ms, application-code: 120ms)
+✓ Compiled in 255ms
+ GET / 200 in 1011ms (next.js: 769ms, application-code: 242ms)

@@ -17,6 +17,9 @@ const METAL_DARK = { color: '#8a919c', metalness: 0.85, roughness: 0.38 }
 /** Gold-plated header contacts. */
 const METAL_GOLD = { color: '#e8c86a', metalness: 0.9, roughness: 0.3 }
 
+/** X positions of the 8 gull-wing legs on each side of a 16-pin DIP. */
+const LEG_X = [-0.9, -0.64, -0.39, -0.13, 0.13, 0.39, 0.64, 0.9]
+
 /** Glossy injection-moulded plastic with a clearcoat sheen. */
 function PlasticMaterial({
   color,
@@ -95,6 +98,26 @@ export const PIN_ANCHORS: Record<ShapeKind, [number, number, number][]> = {
     [-0.46, 0.36, 0.28],
     [0.46, 0.36, -0.28],
     [0.46, 0.36, 0.28],
+  ],
+  // 74HC595-style 16-pin DIP: pins 1-8 run down the left side (top to
+  // bottom), pins 9-16 back up the right side, matching the leg layout.
+  register: [
+    [0.9, 0.3, -0.33],
+    [0.64, 0.3, -0.33],
+    [0.39, 0.3, -0.33],
+    [0.13, 0.3, -0.33],
+    [-0.13, 0.3, -0.33],
+    [-0.39, 0.3, -0.33],
+    [-0.64, 0.3, -0.33],
+    [-0.9, 0.3, -0.33],
+    [-0.9, 0.3, 0.33],
+    [-0.64, 0.3, 0.33],
+    [-0.39, 0.3, 0.33],
+    [-0.13, 0.3, 0.33],
+    [0.13, 0.3, 0.33],
+    [0.39, 0.3, 0.33],
+    [0.64, 0.3, 0.33],
+    [0.9, 0.3, 0.33],
   ],
   sensor: [
     [-0.45, 0.4, 0.28],
@@ -560,6 +583,49 @@ export function ComponentShape({
               </mesh>
             )),
           )}
+        </group>
+      )
+    case 'register':
+      return (
+        <group>
+          {/* 16-pin DIP body */}
+          <RoundedBox
+            args={[2.05, 0.3, 0.62]}
+            radius={0.035}
+            smoothness={4}
+            position={[0, 0.15, 0]}
+            castShadow
+          >
+            <meshStandardMaterial color={color} roughness={0.42} metalness={0.15} />
+          </RoundedBox>
+          {/* orientation notch (pin 1 end) */}
+          <mesh position={[-0.96, 0.31, 0]}>
+            <cylinderGeometry args={[0.07, 0.07, 0.05, 20]} />
+            <meshStandardMaterial color="#0b1220" />
+          </mesh>
+          {/* pin-1 dot */}
+          <mesh position={[-0.9, 0.305, -0.25]}>
+            <cylinderGeometry args={[0.025, 0.025, 0.02, 12]} />
+            <meshStandardMaterial color="#2a2f37" />
+          </mesh>
+          {/* silkscreen band on the right end */}
+          <mesh position={[0.92, 0.305, 0]}>
+            <cylinderGeometry args={[0.03, 0.03, 0.02, 12]} />
+            <meshStandardMaterial color="#3a4150" />
+          </mesh>
+          {/* gull-wing legs, 8 per side */}
+          {LEG_X.map((x) => (
+            <mesh key={`la${x}`} position={[x, 0.02, -0.33]} castShadow>
+              <boxGeometry args={[0.05, 0.16, 0.09]} />
+              <meshStandardMaterial {...METAL_BRIGHT} />
+            </mesh>
+          ))}
+          {LEG_X.map((x) => (
+            <mesh key={`lb${x}`} position={[x, 0.02, 0.33]} castShadow>
+              <boxGeometry args={[0.05, 0.16, 0.09]} />
+              <meshStandardMaterial {...METAL_BRIGHT} />
+            </mesh>
+          ))}
         </group>
       )
     case 'sensor':
