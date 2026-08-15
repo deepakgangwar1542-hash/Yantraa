@@ -25,6 +25,7 @@ const VIEW_SCALE: Record<ShapeKind, number> = {
   register: 0.85,
   sensor: 1.0,
   board: 0.75,
+  esp32: 0.85,
   breadboard: 1.0,
 }
 
@@ -43,6 +44,7 @@ const THUMB_SCALE: Record<ShapeKind, number> = {
   register: 0.78,
   sensor: 0.95,
   board: 0.65,
+  esp32: 0.72,
   breadboard: 0.9,
 }
 
