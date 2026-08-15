@@ -377,6 +377,9 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
   const smoothRef = React.useRef({ x: 0.5, y: 0.5 })
   const lastOpennessRef = React.useRef<number | null>(null)
   const zoomAccumRef = React.useRef(0)
+  // Debounced/hysteresis pinch state so it never flickers near the threshold.
+  const pinchOnRef = React.useRef(false)
+  const pinchPendingRef = React.useRef(0)
   const enabledRef = React.useRef(false)
   enabledRef.current = enabled
 
@@ -402,6 +405,8 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
       smoothRef.current = { x: 0.5, y: 0.5 }
       lastOpennessRef.current = null
       zoomAccumRef.current = 0
+      pinchOnRef.current = false
+      pinchPendingRef.current = 0
     }
 
     const loop = () => {
@@ -415,6 +420,30 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
             const result = landmarker.detectForVideo(video, now)
             const hand = result.landmarks?.[0]
             const p = analyzeHand(hand)
+
+            // Stable pinch: two thresholds (engage < 0.30, release > 0.46) plus a
+            // 2-frame debounce. This stops the thumb/index pinch from rapidly
+            // toggling when the fingers hover near the trigger distance, which is
+            // what made selecting feel irregular and twitchy.
+            if (p.visible) {
+              const PINCH_ON = 0.3
+              const PINCH_OFF = 0.46
+              const want = pinchOnRef.current ? p.pinchRatio < PINCH_OFF : p.pinchRatio < PINCH_ON
+              if (want !== pinchOnRef.current) {
+                pinchPendingRef.current += 1
+                if (pinchPendingRef.current >= 2) {
+                  pinchOnRef.current = want
+                  pinchPendingRef.current = 0
+                }
+              } else {
+                pinchPendingRef.current = 0
+              }
+              p.pinch = pinchOnRef.current
+            } else {
+              pinchOnRef.current = false
+              pinchPendingRef.current = 0
+            }
+
             poseRef.current = p
             if (p.visible) {
               // Adaptive smoothing (1€-filter style): when the hand is nearly

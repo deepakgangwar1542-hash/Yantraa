@@ -20,6 +20,7 @@ interface SceneProps {
   onSelect: (id: string) => void
   onPinClick: (instanceId: string, pinIndex: number) => void
   onMove: (id: string, pos: [number, number, number]) => void
+  onRemove: (id: string) => void
   onDragStateChange: (dragging: boolean) => void
   onDeselect: () => void
   onDeleteWire: (id: string) => void
@@ -29,6 +30,12 @@ interface SceneProps {
 const DRAG_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
 const SNAP = 0.25
 const snap = (v: number) => Math.round(v / SNAP) * SNAP
+
+// Placement bounds of the board surface, and how far past the edge a component
+// must be dragged before it counts as "off the board" and gets removed.
+const BOARD_X = 5.5
+const BOARD_Z = 3.5
+const REMOVE_MARGIN = 0.9
 
 const WIRE_COLORS = ['#e5484d', '#f5b301', '#3ba55d', '#4ea1ff', '#c084fc', '#e8eefb']
 
@@ -261,6 +268,7 @@ function Draggable({
   position,
   enabled,
   onMove,
+  onRemove,
   onSelect,
   onActivate,
   onDragStateChange,
@@ -269,6 +277,7 @@ function Draggable({
   position: Vec3
   enabled: boolean
   onMove: (pos: Vec3) => void
+  onRemove: () => void
   onSelect: () => void
   onActivate?: () => void
   onDragStateChange: (dragging: boolean) => void
@@ -277,10 +286,15 @@ function Draggable({
   const { camera, gl } = useThree()
   const draggingRef = React.useRef(false)
   const movedRef = React.useRef(false)
+  const outsideRef = React.useRef(false)
+  const lastPosRef = React.useRef<Vec3>(position)
   const raycaster = React.useMemo(() => new THREE.Raycaster(), [])
   const pointer = React.useMemo(() => new THREE.Vector2(), [])
   const intersection = React.useMemo(() => new THREE.Vector3(), [])
   const [hovered, setHovered] = React.useState(false)
+  // True while the component is being dragged past the board edge — drives the
+  // red "release to remove" feedback.
+  const [markedForRemoval, setMarkedForRemoval] = React.useState(false)
 
   React.useEffect(() => {
     if (!enabled) return
@@ -294,9 +308,22 @@ function Draggable({
       pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
       raycaster.setFromCamera(pointer, camera)
       if (raycaster.ray.intersectPlane(DRAG_PLANE, intersection)) {
-        const clampedX = Math.max(-5.5, Math.min(5.5, snap(intersection.x)))
-        const clampedZ = Math.max(-3.5, Math.min(3.5, snap(intersection.z)))
-        onMove([clampedX, 0, clampedZ])
+        const rawX = snap(intersection.x)
+        const rawZ = snap(intersection.z)
+        const outside =
+          rawX < -(BOARD_X + REMOVE_MARGIN) ||
+          rawX > BOARD_X + REMOVE_MARGIN ||
+          rawZ < -(BOARD_Z + REMOVE_MARGIN) ||
+          rawZ > BOARD_Z + REMOVE_MARGIN
+        outsideRef.current = outside
+        setMarkedForRemoval(outside)
+        document.body.style.cursor = outside ? 'not-allowed' : 'grabbing'
+        // Let the component follow the cursor slightly past the edge (so it
+        // visibly lifts off the board) but keep it within a sane range.
+        const followX = Math.max(-(BOARD_X + REMOVE_MARGIN + 0.5), Math.min(BOARD_X + REMOVE_MARGIN + 0.5, rawX))
+        const followZ = Math.max(-(BOARD_Z + REMOVE_MARGIN + 0.5), Math.min(BOARD_Z + REMOVE_MARGIN + 0.5, rawZ))
+        lastPosRef.current = [followX, 0, followZ]
+        onMove([followX, 0, followZ])
       }
     }
     const handleUp = () => {
@@ -304,6 +331,19 @@ function Draggable({
       draggingRef.current = false
       onDragStateChange(false)
       document.body.style.cursor = 'auto'
+      if (outsideRef.current) {
+        onRemove()
+      } else {
+        // Snap the final resting position back onto the board bounds.
+        const [x, , z] = lastPosRef.current
+        onMove([
+          Math.max(-BOARD_X, Math.min(BOARD_X, x)),
+          0,
+          Math.max(-BOARD_Z, Math.min(BOARD_Z, z)),
+        ])
+      }
+      outsideRef.current = false
+      setMarkedForRemoval(false)
     }
 
     window.addEventListener('pointermove', handleMove)
@@ -312,7 +352,7 @@ function Draggable({
       window.removeEventListener('pointermove', handleMove)
       window.removeEventListener('pointerup', handleUp)
     }
-  }, [enabled, camera, gl, onMove, onDragStateChange, raycaster, pointer, intersection])
+  }, [enabled, camera, gl, onMove, onRemove, onDragStateChange, raycaster, pointer, intersection])
 
   return (
     <group
@@ -323,6 +363,7 @@ function Draggable({
         onSelect()
         if (enabled) {
           draggingRef.current = true
+          lastPosRef.current = position
           onDragStateChange(true)
           document.body.style.cursor = 'grabbing'
         }
@@ -344,6 +385,28 @@ function Draggable({
       scale={hovered ? 1.03 : 1}
     >
       {children}
+      {markedForRemoval && (
+        <>
+          <SelectionRing color="#e5484d" />
+          <Html position={[0, 1.6, 0]} center distanceFactor={9} pointerEvents="none">
+            <div
+              style={{
+                padding: '2px 8px',
+                borderRadius: 6,
+                background: '#e5484d',
+                color: '#ffffff',
+                fontSize: 13,
+                fontWeight: 700,
+                whiteSpace: 'nowrap',
+                fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
+                userSelect: 'none',
+              }}
+            >
+              Release to remove
+            </div>
+          </Html>
+        </>
+      )}
     </group>
   )
 }
@@ -504,6 +567,7 @@ export function LabScene({
   onSelect,
   onPinClick,
   onMove,
+  onRemove,
   onDragStateChange,
   onDeselect,
   onDeleteWire,
@@ -621,6 +685,7 @@ export function LabScene({
               position={inst.position}
               enabled={mode === 'move'}
               onMove={(pos) => onMove(inst.instanceId, pos)}
+              onRemove={() => onRemove(inst.instanceId)}
               onSelect={() => onSelect(inst.instanceId)}
               onActivate={def.id === 'button' ? () => onTogglePress(inst.instanceId) : undefined}
               onDragStateChange={handleDragState}

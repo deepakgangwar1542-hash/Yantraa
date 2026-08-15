@@ -54,6 +54,12 @@ export interface HandPose {
   y: number
   /** Thumb + index pinch closed (press / hold-to-select while held). */
   pinch: boolean
+  /**
+   * Continuous thumb↔index distance normalized by hand size (~0.1 when firmly
+   * pinched, ~0.8+ when wide open). Exposed so the input layer can apply
+   * hysteresis and keep the pinch state from flickering near the threshold.
+   */
+  pinchRatio: number
   /** Index + middle up, ring + pinky folded: vertical movement scrolls. */
   scroll: boolean
   /** Hand openness 0 (tight fist) .. 1 (fully open palm). Drives zoom. */
@@ -118,6 +124,7 @@ const NONE: HandPose = {
   x: 0.5,
   y: 0.5,
   pinch: false,
+  pinchRatio: 1,
   scroll: false,
   openness: 0.5,
   fist: false,
@@ -137,7 +144,8 @@ export function analyzeHand(landmarks: NormalizedLandmark[] | undefined): HandPo
   const handSize = dist(landmarks[0], landmarks[9])
   if (handSize < 0.01) return NONE
 
-  const pinch = dist(landmarks[4], landmarks[8]) / handSize < 0.34
+  const pinchRatio = dist(landmarks[4], landmarks[8]) / handSize
+  const pinch = pinchRatio < 0.34
 
   const indexUp = isExtended(landmarks, 8, 6)
   const middleUp = isExtended(landmarks, 12, 10)
@@ -163,6 +171,7 @@ export function analyzeHand(landmarks: NormalizedLandmark[] | undefined): HandPo
     x: 1 - landmarks[8].x,
     y: landmarks[8].y,
     pinch,
+    pinchRatio,
     scroll,
     openness,
     fist,

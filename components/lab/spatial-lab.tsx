@@ -382,18 +382,22 @@ export function SpatialLab() {
     setSelectedId(instanceId)
   }, [])
 
-  const deleteSelected = React.useCallback(() => {
-    if (!selectedId) return
-    setPlaced((prev) => prev.filter((p) => p.instanceId !== selectedId))
-    setWires((prev) => prev.filter((w) => w.from.instanceId !== selectedId && w.to.instanceId !== selectedId))
+  const deleteInstance = React.useCallback((id: string) => {
+    setPlaced((prev) => prev.filter((p) => p.instanceId !== id))
+    setWires((prev) => prev.filter((w) => w.from.instanceId !== id && w.to.instanceId !== id))
     setPressedIds((prev) => {
       const next = new Set(prev)
-      next.delete(selectedId)
+      next.delete(id)
       return next
     })
-    setSelectedId(null)
+    setSelectedId((cur) => (cur === id ? null : cur))
     setPendingWire(null)
-  }, [selectedId])
+  }, [])
+
+  const deleteSelected = React.useCallback(() => {
+    if (!selectedId) return
+    deleteInstance(selectedId)
+  }, [selectedId, deleteInstance])
 
   const clearAll = React.useCallback(() => {
     setPlaced([])
@@ -464,6 +468,7 @@ export function SpatialLab() {
           onSelect={handleSelect}
           onPinClick={handlePinClick}
           onMove={handleMove}
+          onRemove={deleteInstance}
           onDragStateChange={() => {}}
           onDeselect={() => {
             setSelectedId(null)
