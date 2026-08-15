@@ -2,8 +2,8 @@
 
 import * as React from 'react'
 import { Canvas } from '@react-three/fiber'
-import { OrbitControls, ContactShadows, Environment, Lightformer } from '@react-three/drei'
-import { ComponentShape } from '@/components/lab/component-mesh'
+import { OrbitControls, ContactShadows, Environment, Lightformer, Html } from '@react-three/drei'
+import { ComponentShape, getPinAnchors } from '@/components/lab/component-mesh'
 import type { ElectronicsComponent, ShapeKind } from '@/lib/electronics-data'
 
 /* ------------------------------------------------------------------ */
@@ -51,6 +51,76 @@ const THUMB_SCALE: Record<ShapeKind, number> = {
 export type ViewerSize = 'thumb' | 'modal'
 
 /* ------------------------------------------------------------------ */
+/* 3D pin / wiring markers                                              */
+/* ------------------------------------------------------------------ */
+
+type PinInfo = ElectronicsComponent['pins'][number]
+
+function pinColor(polarity: PinInfo['polarity']): string {
+  if (polarity === 'positive') return '#3fb950'
+  if (polarity === 'negative') return '#f85149'
+  return '#f5b301'
+}
+
+/**
+ * Floating labelled markers pinned to each wire-attachment anchor of the mesh.
+ * Rendered inside the scaled mesh group so markers track the component exactly
+ * as it orbits. Shows the real connection points a wire would clip onto, so the
+ * library preview mirrors what wiring in the 3D lab looks like.
+ */
+function PinMarkers({ shape, pins }: { shape: ShapeKind; pins: PinInfo[] }) {
+  const anchors = getPinAnchors(shape)
+  return (
+    <group>
+      {pins.map((p, i) => {
+        const a = anchors[i]
+        if (!a) return null
+        const col = pinColor(p.polarity)
+        const sign = p.polarity === 'positive' ? '+' : p.polarity === 'negative' ? '\u2212' : ''
+        return (
+          <group key={p.name} position={a}>
+            {/* connection node */}
+            <mesh>
+              <sphereGeometry args={[0.055, 16, 16]} />
+              <meshBasicMaterial color={col} toneMapped={false} />
+            </mesh>
+            {/* soft halo so the point reads clearly against the body */}
+            <mesh>
+              <sphereGeometry args={[0.1, 16, 16]} />
+              <meshBasicMaterial color={col} transparent opacity={0.22} toneMapped={false} depthWrite={false} />
+            </mesh>
+            {/* label */}
+            <Html center distanceFactor={7} position={[0, 0.28, 0]} zIndexRange={[20, 0]} pointerEvents="none">
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '3px 9px',
+                  borderRadius: 999,
+                  background: 'rgba(11,18,32,0.86)',
+                  border: `1px solid ${col}`,
+                  color: '#eef3fb',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  whiteSpace: 'nowrap',
+                  fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
+                  userSelect: 'none',
+                  boxShadow: '0 2px 10px rgba(0,0,0,0.45)',
+                }}
+              >
+                {sign && <span style={{ color: col, fontSize: 13 }}>{sign}</span>}
+                {p.name}
+              </div>
+            </Html>
+          </group>
+        )
+      })}
+    </group>
+  )
+}
+
+/* ------------------------------------------------------------------ */
 /* Shared scene                                                         */
 /* ------------------------------------------------------------------ */
 
@@ -67,12 +137,16 @@ export function ComponentScene({
   size = 'modal',
   autoRotateSpeed = 1.4,
   resetSignal = 0,
+  pins,
+  showPins = false,
 }: {
   shape: ShapeKind
   color: string
   size?: ViewerSize
   autoRotateSpeed?: number
   resetSignal?: number
+  pins?: PinInfo[]
+  showPins?: boolean
 }) {
   const isThumb = size === 'thumb'
   const scale = isThumb ? (THUMB_SCALE[shape] ?? 1) : (VIEW_SCALE[shape] ?? 1)
@@ -107,6 +181,7 @@ export function ComponentScene({
       {/* Component mesh */}
       <group scale={scale}>
         <ComponentShape shape={shape} color={color} />
+        {showPins && pins && pins.length > 0 && <PinMarkers shape={shape} pins={pins} />}
       </group>
 
       {/* Contact shadow — only for the full modal */}
