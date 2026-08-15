@@ -107,10 +107,10 @@ function useBreadboardTexture() {
     ctx.fillStyle = 'rgba(0,0,0,0.10)'
     ctx.fillRect(0, c.height / 2 - 26, c.width, 52)
     // hole grid
-    ctx.fillStyle = '#3a3730'
     const startX = 70
     const stepX = (c.width - 140) / 30
     const rows = [110, 150, 190, 230, 270, c.height - 270, c.height - 230, c.height - 190, c.height - 150, c.height - 110]
+    ctx.fillStyle = '#3a3730'
     for (let i = 0; i <= 30; i++) {
       for (const ry of rows) {
         ctx.beginPath()
@@ -118,6 +118,46 @@ function useBreadboardTexture() {
         ctx.fill()
       }
     }
+
+    // --- printed markings, like a real breadboard ---
+    ctx.fillStyle = '#4a453a'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+
+    // Column numbers (1..30) printed above the top block and below the bottom block.
+    ctx.font = 'bold 15px "Segoe UI", Arial, sans-serif'
+    const topNumY = rows[0] - 30
+    const botNumY = rows[rows.length - 1] + 30
+    for (let i = 0; i <= 30; i++) {
+      const col = i + 1
+      // Print 1, then every 5th column, matching real breadboard labelling.
+      if (col === 1 || col % 5 === 0) {
+        const x = startX + i * stepX
+        ctx.fillText(String(col), x, topNumY)
+        ctx.fillText(String(col), x, botNumY)
+      }
+    }
+
+    // Row letters: a-e for the top block, f-j for the bottom block, on both sides.
+    ctx.font = 'bold 16px "Segoe UI", Arial, sans-serif'
+    const rowLetters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j']
+    const leftX = startX - 34
+    const rightX = startX + 30 * stepX + 34
+    rows.forEach((ry, idx) => {
+      const letter = rowLetters[idx]
+      ctx.fillText(letter, leftX, ry)
+      ctx.fillText(letter, rightX, ry)
+    })
+
+    // Power-rail +/- markers next to the coloured rails.
+    ctx.font = 'bold 20px "Segoe UI", Arial, sans-serif'
+    ctx.fillStyle = '#d94b4b'
+    ctx.fillText('+', 40, 46)
+    ctx.fillText('+', 40, c.height - 72)
+    ctx.fillStyle = '#3b6fd9'
+    ctx.fillText('-', 40, 72)
+    ctx.fillText('-', 40, c.height - 46)
+
     const tex = new THREE.CanvasTexture(c)
     tex.anisotropy = 4
     tex.needsUpdate = true
@@ -485,11 +525,37 @@ function Pins({
                 document.body.style.cursor = 'auto'
               }}
             >
-              <sphereGeometry args={[0.26, 12, 12]} />
+              <sphereGeometry args={[wireMode ? 0.42 : 0.26, 12, 12]} />
               <meshBasicMaterial transparent opacity={0} depthWrite={false} />
             </mesh>
+            {/* Glow halo so connection points are easy to spot and target in wire mode. */}
+            {wireMode && (
+              <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+                <ringGeometry args={[0.16, 0.26, 28]} />
+                <meshBasicMaterial
+                  color={isPending ? '#ffd34d' : isHovered ? '#ffffff' : '#f5b301'}
+                  transparent
+                  opacity={isPending ? 0.95 : isHovered ? 0.9 : 0.55}
+                  side={THREE.DoubleSide}
+                  toneMapped={false}
+                  depthWrite={false}
+                />
+              </mesh>
+            )}
             <mesh
-              scale={isPending ? 1.9 : isHovered ? 1.55 : 1}
+              scale={
+                isPending
+                  ? wireMode
+                    ? 2.8
+                    : 1.9
+                  : isHovered
+                    ? wireMode
+                      ? 2.4
+                      : 1.55
+                    : wireMode
+                      ? 1.9
+                      : 1
+              }
               onClick={(e: ThreeEvent<MouseEvent>) => {
                 e.stopPropagation()
                 if (wireMode) onPinClick(i)

@@ -453,9 +453,14 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
               const dx = p.x - smoothRef.current.x
               const dy = p.y - smoothRef.current.y
               const speed = Math.hypot(dx, dy)
-              const DEADZONE = 0.0035
+              // While a pinch is held (selecting / connecting a wire) the fingers
+              // curl and naturally wobble the cursor, so damp movement harder and
+              // widen the deadzone. This keeps the cursor pinned on the target pin
+              // so pinch-to-connect lands reliably instead of slipping off.
+              const pinching = pinchOnRef.current
+              const DEADZONE = pinching ? 0.009 : 0.0035
               if (speed > DEADZONE) {
-                const alpha = clamp(speed * 11, 0.16, 0.6)
+                const alpha = pinching ? clamp(speed * 6, 0.1, 0.32) : clamp(speed * 11, 0.16, 0.6)
                 smoothRef.current.x += dx * alpha
                 smoothRef.current.y += dy * alpha
               }
