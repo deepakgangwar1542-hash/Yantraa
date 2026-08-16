@@ -26,6 +26,7 @@ import { useThemeMode } from '@/app/providers'
 import { InstructorChat } from '@/components/instructor/instructor-chat'
 import { ComponentLibrary } from '@/components/library/component-library'
 import { SpatialLab } from '@/components/lab/spatial-lab'
+import { FloatingAssistant } from '@/components/assistant/floating-assistant'
 import { AmbientBackground } from '@/components/ambient-background'
 import { HandControlProvider, useHandControl } from '@/components/hand-control'
 import {
@@ -419,6 +420,16 @@ export function AppShell() {
             >
               <SpatialLab />
             </div>
+          )}
+
+          {/*
+            Floating "Ask Circuit" assistant available in Library and 3D Lab.
+            A stable key keeps it mounted (and its conversation intact) when
+            switching between those two views; it unmounts on Instructor, which
+            has its own full-screen tutor.
+          */}
+          {(view === 'library' || view === 'lab') && (
+            <FloatingAssistant key="floating-assistant" context={view === 'lab' ? 'lab' : 'library'} />
           )}
         </div>
       </div>
