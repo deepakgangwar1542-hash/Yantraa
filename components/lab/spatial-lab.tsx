@@ -557,13 +557,6 @@ export function SpatialLab() {
           case 'connect': {
             const fromId = resolveInstanceId(board, action.from.component)
             const toId = resolveInstanceId(board, action.to.component)
-            console.log('[v0] voice connect', {
-              board: board.map((b) => `${b.componentId}:${b.instanceId}`),
-              from: action.from.component,
-              to: action.to.component,
-              fromId,
-              toId,
-            })
             if (!fromId || !toId) break
             switchMode('wire')
             connectWire(

@@ -175,12 +175,6 @@ export function VoiceControlProvider({ children }: { children: React.ReactNode }
     [runCommand],
   )
 
-  // [v0] temporary test hook — drive the voice pipeline without a microphone.
-  React.useEffect(() => {
-    ;(window as unknown as { __voiceTest?: (s: string) => void }).__voiceTest = (s: string) =>
-      void runCommand(s)
-  }, [runCommand])
-
   // Own the SpeechRecognition lifecycle while enabled.
   React.useEffect(() => {
     if (!enabled || !supported) return
