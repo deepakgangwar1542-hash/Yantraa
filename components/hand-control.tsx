@@ -12,6 +12,7 @@ import {
   type HandPose,
 } from '@/lib/hand-tracking'
 import { STATUS, MONO_STACK, PCB } from '@/lib/theme'
+import { handOrbit } from '@/lib/hand-orbit'
 
 /* ------------------------------------------------------------------ */
 /* Context                                                            */
@@ -569,12 +570,16 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
   React.useEffect(() => {
     if (!enabled) return
 
+    // Tell the 3D lab that hand control is driving it, so the camera only
+    // rotates during the fist gesture (never during wiring pinch-drags).
+    handOrbit.setHandActive(true)
+    handOrbit.setOrbitGesture(false)
+
     // Gesture tuning constants.
     const FIST_ON = 0.1 // orbit engages ONLY on a fully closed fist
     const FIST_OFF = 0.2 // the moment the hand starts opening, orbit releases
     const ZOOM_STEP = 0.07 // openness delta per zoom "notch"
-    const GRAB_MOVE = 0.03 // hand travel (normalized) that turns a pinch into a grab
-    const DOUBLE_PINCH_MS = 650 // two pinches within this window = "pinch twice"
+    const TAP_MOVE = 0.03 // hand travel (normalized) below which a pinch counts as a tap
 
     /** The <canvas> under a screen point, if any (the 3D lab surface). */
     const canvasAt = (px: number, py: number): Element | null => {
@@ -584,32 +589,13 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
       return el.closest?.('canvas') ?? null
     }
 
-    /** Click an empty canvas corner so R3F's onPointerMissed clears the selection. */
-    const clickEmptyToDeselect = (canvas: Element | null) => {
-      if (!canvas) return
-      const r = canvas.getBoundingClientRect()
-      const cx = r.left + 6
-      const cy = r.top + 6
-      dispatchPointer('pointerdown', cx, cy, 1, canvas)
-      dispatchPointer('pointerup', cx, cy, 0, canvas)
-      dispatchClick(cx, cy, canvas)
-    }
-
     const endOrbit = () => {
+      handOrbit.setOrbitGesture(false)
       if (!orbitActiveRef.current) return
       const a = orbitPtrRef.current
       dispatchPointer('pointerup', a.x, a.y, 0, orbitCanvasRef.current)
       orbitActiveRef.current = false
       setDown(false)
-    }
-
-    const dropGrab = (x: number, y: number, target: Element | null) => {
-      dispatchPointer('pointerup', x, y, 0, target)
-      clickEmptyToDeselect(canvasAt(x, y) ?? orbitCanvasRef.current)
-      grabbedRef.current = false
-      pinchTimesRef.current = []
-      setDown(false)
-      setFlash((f) => f + 1)
     }
 
     const step = () => {
@@ -620,7 +606,6 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
         endOrbit()
         const x = lastXRef.current
         const y = lastYRef.current
-        if (grabbedRef.current) dropGrab(x, y, document.elementFromPoint(x, y))
         if (pressActiveRef.current) {
           dispatchPointer('pointerup', x, y, 0, document.elementFromPoint(x, y))
           pressActiveRef.current = false
@@ -649,10 +634,13 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
       prevPinchRef.current = p.pinch
 
       /* ---------- ORBIT: tight fist rotates the 3D view --------------- */
-      // Exclusive gesture; never runs while grabbing, pressing or pinching.
-      if (fistOn && !grabbedRef.current && !pressActiveRef.current && !p.pinch) {
+      // Exclusive gesture; only a fully closed fist rotates the camera. Any
+      // other pose leaves the view perfectly stable so wiring is precise.
+      if (fistOn && !pressActiveRef.current && !p.pinch) {
         const canvas = canvasAt(x, y) ?? document.querySelector('canvas')
         if (!orbitActiveRef.current) {
+          // Unlock camera rotation for this gesture only.
+          handOrbit.setOrbitGesture(true)
           // Anchor the drag at a safe, empty-ish spot on the board so the first
           // pointerdown drives OrbitControls instead of grabbing a component.
           const r = (canvas as Element | null)?.getBoundingClientRect()

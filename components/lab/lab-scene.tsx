@@ -8,6 +8,7 @@ import { getComponent, type ShapeKind } from '@/lib/electronics-data'
 import { ComponentShape, getPinAnchors } from '@/components/lab/component-mesh'
 import type { CircuitReport, PlacedInstance, Wire, WireEnd } from '@/lib/circuit-engine'
 import { SIGNAL, COPPER, STATUS } from '@/lib/theme'
+import { handOrbit } from '@/lib/hand-orbit'
 
 interface SceneProps {
   placed: PlacedInstance[]
@@ -19,13 +20,39 @@ interface SceneProps {
   report: CircuitReport
   pressedIds: ReadonlySet<string>
   onSelect: (id: string) => void
-  onPinClick: (instanceId: string, pinIndex: number) => void
+  onPinDown: (instanceId: string, pinIndex: number) => void
+  onPinUp: (instanceId: string, pinIndex: number) => void
   onMove: (id: string, pos: [number, number, number]) => void
   onRemove: (id: string) => void
   onDragStateChange: (dragging: boolean) => void
   onDeselect: () => void
   onDeleteWire: (id: string) => void
   onTogglePress: (id: string) => void
+}
+
+/**
+ * OrbitControls that only rotate when allowed: always for mouse users, but for
+ * hand control ONLY while a fist is held. This keeps the view perfectly stable
+ * while the user pinches to select pins and drag wires.
+ */
+function LabControls({ dragging }: { dragging: boolean }) {
+  const [rotateAllowed, setRotateAllowed] = React.useState(handOrbit.rotateAllowed())
+  React.useEffect(
+    () => handOrbit.subscribe(() => setRotateAllowed(handOrbit.rotateAllowed())),
+    [],
+  )
+  return (
+    <OrbitControls
+      enabled={!dragging}
+      enableRotate={rotateAllowed}
+      enableDamping
+      dampingFactor={0.08}
+      minDistance={4}
+      maxDistance={22}
+      maxPolarAngle={Math.PI / 2.15}
+      makeDefault
+    />
+  )
 }
 
 const DRAG_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
@@ -569,7 +596,8 @@ function Pins({
   showLabels,
   instanceId,
   pending,
-  onPinClick,
+  onPinDown,
+  onPinUp,
 }: {
   shape: ShapeKind
   names: string[]
@@ -577,7 +605,8 @@ function Pins({
   showLabels: boolean
   instanceId: string
   pending: WireEnd | null
-  onPinClick: (pinIndex: number) => void
+  onPinDown: (pinIndex: number) => void
+  onPinUp: (pinIndex: number) => void
 }) {
   const anchors = getPinAnchors(shape)
   const [hoveredIdx, setHoveredIdx] = React.useState<number | null>(null)
@@ -595,9 +624,15 @@ function Pins({
                 less precise than a mouse), so catch clicks within a generous
                 radius around the pad while the visible sphere stays tiny. */}
             <mesh
-              onClick={(e: ThreeEvent<MouseEvent>) => {
+              onPointerDown={(e: ThreeEvent<PointerEvent>) => {
+                if (!wireMode) return
                 e.stopPropagation()
-                if (wireMode) onPinClick(i)
+                onPinDown(i)
+              }}
+              onPointerUp={(e: ThreeEvent<PointerEvent>) => {
+                if (!wireMode) return
+                e.stopPropagation()
+                onPinUp(i)
               }}
               onPointerOver={
                 wireMode
@@ -644,9 +679,15 @@ function Pins({
                       ? 1.9
                       : 1
               }
-              onClick={(e: ThreeEvent<MouseEvent>) => {
+              onPointerDown={(e: ThreeEvent<PointerEvent>) => {
+                if (!wireMode) return
                 e.stopPropagation()
-                if (wireMode) onPinClick(i)
+                onPinDown(i)
+              }}
+              onPointerUp={(e: ThreeEvent<PointerEvent>) => {
+                if (!wireMode) return
+                e.stopPropagation()
+                onPinUp(i)
               }}
               onPointerOver={
                 wireMode
@@ -719,7 +760,8 @@ export function LabScene({
   report,
   pressedIds,
   onSelect,
-  onPinClick,
+  onPinDown,
+  onPinUp,
   onMove,
   onRemove,
   onDragStateChange,
@@ -860,7 +902,8 @@ export function LabScene({
                 showLabels={isSelected}
                 instanceId={inst.instanceId}
                 pending={pendingWire}
-                onPinClick={(pinIndex) => onPinClick(inst.instanceId, pinIndex)}
+                onPinDown={(pinIndex) => onPinDown(inst.instanceId, pinIndex)}
+                onPinUp={(pinIndex) => onPinUp(inst.instanceId, pinIndex)}
               />
               {isError && <SelectionRing color={STATUS.error} />}
               {isWarning && !isError && <SelectionRing color={STATUS.warning} />}
@@ -882,15 +925,7 @@ export function LabScene({
         color="#000000"
       />
 
-      <OrbitControls
-        enabled={!dragging}
-        enableDamping
-        dampingFactor={0.08}
-        minDistance={4}
-        maxDistance={22}
-        maxPolarAngle={Math.PI / 2.15}
-        makeDefault
-      />
+      <LabControls dragging={dragging} />
     </Canvas>
   )
 }
