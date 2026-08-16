@@ -108,9 +108,9 @@ export function VoiceControlProvider({ children }: { children: React.ReactNode }
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              transcript: cmd,
-              board: describeBoard(labSnapshot.get()),
-            }),
+            transcript: cmd,
+            board: describeBoard(labSnapshot.get()),
+          }),
           })
           const data = (await res.json()) as { actions?: LabAction[]; reply?: string }
           actions = data.actions ?? []
@@ -174,6 +174,12 @@ export function VoiceControlProvider({ children }: { children: React.ReactNode }
     },
     [runCommand],
   )
+
+  // [v0] temporary test hook — drive the voice pipeline without a microphone.
+  React.useEffect(() => {
+    ;(window as unknown as { __voiceTest?: (s: string) => void }).__voiceTest = (s: string) =>
+      void runCommand(s)
+  }, [runCommand])
 
   // Own the SpeechRecognition lifecycle while enabled.
   React.useEffect(() => {

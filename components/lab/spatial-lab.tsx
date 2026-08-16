@@ -38,6 +38,13 @@ import {
   type WireEnd,
 } from '@/lib/circuit-engine'
 import { useHandControl } from '@/components/hand-control'
+import {
+  labBus,
+  labSnapshot,
+  resolveInstanceId,
+  resolvePinIndex,
+  type LabAction,
+} from '@/lib/lab-actions'
 import { useGuided } from '@/lib/guided-context'
 import { evaluateProgress } from '@/lib/projects'
 import { PCB, MONO_STACK, GLOW, STATUS } from '@/lib/theme'
@@ -379,7 +386,7 @@ export function SpatialLab() {
     reportProgress(evaluateProgress(activeProject, wires, report))
   }, [activeProject, wires, report, reportProgress])
 
-  const addComponent = React.useCallback((componentId: string) => {
+  const addComponent = React.useCallback((componentId: string, instanceId?: string) => {
     setPlaced((prev) => {
       const index = prev.length
       const x = -3 + (index % 4) * 2
@@ -390,7 +397,7 @@ export function SpatialLab() {
         0,
         Math.max(-3.5, Math.min(3.5, snap(z))),
       ]
-      return [...prev, { instanceId: nextId(), componentId, position: pos }]
+      return [...prev, { instanceId: instanceId ?? nextId(), componentId, position: pos }]
     })
   }, [])
 
@@ -519,6 +526,85 @@ export function SpatialLab() {
     setMode(m)
     setPendingWire(null)
   }, [])
+
+  // Keep a synchronous mirror of the board so voice actions in one batch
+  // (e.g. "add a resistor and connect it") can resolve parts added moments ago,
+  // and so the voice layer can describe the board to the LLM.
+  const placedForVoiceRef = React.useRef<PlacedInstance[]>([])
+  React.useEffect(() => {
+    placedForVoiceRef.current = placed
+    labSnapshot.set(placed)
+  }, [placed])
+
+  // Execute an ordered batch of voice actions against the real lab callbacks.
+  const runVoiceActions = React.useCallback(
+    (actions: LabAction[]) => {
+      // Work against a local copy of the board that grows as we add parts, so a
+      // later connect in the same utterance can see an earlier add.
+      let board = [...placedForVoiceRef.current]
+      for (const action of actions) {
+        switch (action.type) {
+          case 'add': {
+            const id = nextId()
+            addComponent(action.componentId, id)
+            board = [...board, { instanceId: id, componentId: action.componentId, position: [0, 0, 0] }]
+            setSelectedId(id)
+            break
+          }
+          case 'mode':
+            switchMode(action.mode)
+            break
+          case 'connect': {
+            const fromId = resolveInstanceId(board, action.from.component)
+            const toId = resolveInstanceId(board, action.to.component)
+            console.log('[v0] voice connect', {
+              board: board.map((b) => `${b.componentId}:${b.instanceId}`),
+              from: action.from.component,
+              to: action.to.component,
+              fromId,
+              toId,
+            })
+            if (!fromId || !toId) break
+            switchMode('wire')
+            connectWire(
+              { instanceId: fromId, pinIndex: resolvePinIndex(action.from.component.componentId, action.from.pinHint) },
+              { instanceId: toId, pinIndex: resolvePinIndex(action.to.component.componentId, action.to.pinHint) },
+            )
+            break
+          }
+          case 'run':
+            setRunning(action.on)
+            break
+          case 'delete': {
+            const id = action.component
+              ? resolveInstanceId(board, action.component)
+              : selectedId
+            if (id) {
+              deleteInstance(id)
+              board = board.filter((p) => p.instanceId !== id)
+            }
+            break
+          }
+          case 'clear':
+            clearAll()
+            board = []
+            break
+          case 'press': {
+            const id = resolveInstanceId(board, action.component)
+            if (id) togglePress(id)
+            break
+          }
+          case 'zoom':
+            // Zoom is handled visually by the voice component via the wheel; no
+            // board state to change here.
+            break
+        }
+      }
+    },
+    [addComponent, switchMode, connectWire, deleteInstance, clearAll, togglePress, selectedId],
+  )
+
+  React.useEffect(() => labBus.subscribe(runVoiceActions), [runVoiceActions])
 
   // Escape cancels a pending wire and deselects.
   React.useEffect(() => {

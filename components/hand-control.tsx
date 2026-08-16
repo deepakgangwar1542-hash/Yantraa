@@ -418,8 +418,9 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
   enabledRef.current = enabled
 
   /* ---- gesture state machine refs --------------------------------- */
-  const lastXRef = React.useRef(window.innerWidth / 2)
-  const lastYRef = React.useRef(window.innerHeight / 2)
+  // Initialized to 0 (SSR-safe); the gesture loop overwrites these before use.
+  const lastXRef = React.useRef(0)
+  const lastYRef = React.useRef(0)
   const prevPinchRef = React.useRef(false)
   // Tight-fist → orbit the 3D view (hysteresis so it doesn't flicker).
   const fistOnRef = React.useRef(false)
