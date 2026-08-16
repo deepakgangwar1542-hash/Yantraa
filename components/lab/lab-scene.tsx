@@ -36,15 +36,27 @@ interface SceneProps {
  * while the user pinches to select pins and drag wires.
  */
 function LabControls({ dragging }: { dragging: boolean }) {
-  const [rotateAllowed, setRotateAllowed] = React.useState(handOrbit.rotateAllowed())
-  React.useEffect(
-    () => handOrbit.subscribe(() => setRotateAllowed(handOrbit.rotateAllowed())),
-    [],
-  )
+  const ref = React.useRef<React.ElementRef<typeof OrbitControls> | null>(null)
+
+  // Apply the rotate permission IMPERATIVELY so it lands in the same synchronous
+  // tick that the fist gesture dispatches its pointerdown. Driving enableRotate
+  // through React state would update a frame too late, so OrbitControls would
+  // still see enableRotate=false at pointerdown and the rotation would never
+  // start — which is exactly what made the fist-orbit gesture appear dead.
+  const apply = React.useCallback(() => {
+    const controls = ref.current as unknown as { enableRotate: boolean } | null
+    if (controls) controls.enableRotate = handOrbit.rotateAllowed()
+  }, [])
+
+  React.useEffect(() => {
+    apply()
+    return handOrbit.subscribe(apply)
+  }, [apply])
+
   return (
     <OrbitControls
+      ref={ref}
       enabled={!dragging}
-      enableRotate={rotateAllowed}
       enableDamping
       dampingFactor={0.08}
       minDistance={4}
