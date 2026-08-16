@@ -670,42 +670,39 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
       const buttons = pressActiveRef.current ? 1 : 0
       dispatchPointer('pointermove', x, y, buttons, hovering)
 
-      /* ---------- ZOOM: open / close the hand (not a tight fist) ------- */
-      if (!p.pinch && !p.scroll && !pressActiveRef.current) {
-        const prev = lastOpennessRef.current
-        if (prev !== null) {
-          const d = p.openness - prev
-          if (Math.abs(d) > 0.012) zoomAccumRef.current += d
-        }
-        lastOpennessRef.current = p.openness
-        let ticks = 0
-        while (zoomAccumRef.current > ZOOM_STEP && ticks < 4) {
-          zoomAccumRef.current -= ZOOM_STEP
-          ticks += 1
-          dispatchWheel(x, y, -100, zoomTargetAt(x, y)) // opening → zoom in
-        }
-        while (zoomAccumRef.current < -ZOOM_STEP && ticks < 4) {
-          zoomAccumRef.current += ZOOM_STEP
-          ticks += 1
-          dispatchWheel(x, y, 100, zoomTargetAt(x, y)) // closing → zoom out
-        }
-      } else {
-        lastOpennessRef.current = null
-        zoomAccumRef.current = 0
-      }
-
-      /* ---------- SCROLL: index + middle up, move vertically ---------- */
-      if (p.scroll) {
+      /* ---------- TWO FINGERS up / down: zoom the lab OR scroll panels -
+       * A single vocabulary for vertical hand travel with two fingers up
+       * (index + middle). Over the 3D lab it drives the zoom wheel; over any
+       * scrollable panel it scrolls. Open / close no longer zooms, so it can
+       * never be confused with the fist-orbit gesture.
+       */
+      if (p.scroll && !pressActiveRef.current) {
+        const overCanvas = !!canvasAt(x, y)
         if (lastScrollYRef.current !== null) {
-          const delta = (lastScrollYRef.current - p.y) * window.innerHeight * 0.9
-          if (Math.abs(delta) > 0.5) {
-            const scroller = findScrollable(hovering)
-            scroller?.scrollBy({ top: delta })
+          const dy = lastScrollYRef.current - p.y // hand up (dy>0) → zoom in / scroll up
+          if (overCanvas) {
+            // Accumulate travel into discrete zoom notches for a smooth zoom.
+            zoomAccumRef.current += dy
+            let ticks = 0
+            while (zoomAccumRef.current > ZOOM_STEP && ticks < 4) {
+              zoomAccumRef.current -= ZOOM_STEP
+              ticks += 1
+              dispatchWheel(x, y, -100, zoomTargetAt(x, y)) // hand up → zoom in
+            }
+            while (zoomAccumRef.current < -ZOOM_STEP && ticks < 4) {
+              zoomAccumRef.current += ZOOM_STEP
+              ticks += 1
+              dispatchWheel(x, y, 100, zoomTargetAt(x, y)) // hand down → zoom out
+            }
+          } else {
+            const delta = dy * window.innerHeight * 0.9
+            if (Math.abs(delta) > 0.5) findScrollable(hovering)?.scrollBy({ top: delta })
           }
         }
         lastScrollYRef.current = p.y
       } else {
         lastScrollYRef.current = null
+        zoomAccumRef.current = 0
       }
 
       /* ---------- PINCH: press → drag → release ----------------------
@@ -837,7 +834,7 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
           <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
             {status === 'ready'
               ? pose?.visible
-                ? 'Pinch to select · open / close to zoom · two fingers to scroll'
+                ? 'Fist to orbit · two fingers to zoom · pinch to select & wire'
                 : 'Show your hand to the camera'
               : status === 'loading'
                 ? 'Loading hand-tracking model…'
@@ -921,7 +918,9 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
                   ? 'Fist — move to orbit the view'
                   : pose.pinch
                     ? 'Pinch held — drag to move parts or pull a wire'
-                    : 'Fist orbits · open / close zooms · pinch a pin & drag to wire'
+                    : pose.scroll
+                      ? 'Two fingers — move up / down to zoom'
+                      : 'Fist orbits · two fingers zoom · pinch a pin & drag to wire'
                 : 'Move your hand into view'}
             </Text>
           </div>
