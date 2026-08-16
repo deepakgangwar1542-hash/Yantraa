@@ -568,7 +568,68 @@ function card(s, { x, y, w, h, fill = C.panel }) {
 }
 
 /* ======================================================================== */
-/* 9 — IMPACT / WHO IT'S FOR                                                */
+/* 9 — TECH STACK                                                           */
+/* ======================================================================== */
+{
+  const s = newSlide()
+  heading(s, 'TECH STACK', 'The tools that power YANTRAA')
+
+  const groups = [
+    ['FRONTEND', C.red, [
+      'Next.js (App Router)',
+      'React + TypeScript',
+      'Fluent UI',
+      'Tailwind-style tokens',
+    ]],
+    ['3D & GRAPHICS', C.copper, [
+      'React Three Fiber',
+      'Three.js / WebGL',
+      '@react-three/drei',
+      'Single shared GL context',
+    ]],
+    ['SIMULATION & AI', C.hot, [
+      'Custom circuit engine',
+      'Vercel AI SDK',
+      'Groq LLM (streaming)',
+      'MediaPipe hand tracking',
+    ]],
+    ['PLATFORM', C.green, [
+      'Vercel hosting',
+      'Supabase (auth ready)',
+      'Client-side persistence',
+      'Zero-install PWA-ready',
+    ]],
+  ]
+  const cardW = (W - MX * 2 - 0.9) / 4
+  const cardH = 3.5
+  groups.forEach((g, i) => {
+    const x = MX + i * (cardW + 0.3)
+    const y = 2.6
+    card(s, { x, y, w: cardW, h: cardH })
+    s.addText(g[0], { x: x + 0.25, y: y + 0.28, w: cardW - 0.5, h: 0.35, fontFace: MONO, fontSize: 12, bold: true, color: g[1], charSpacing: 1.5 })
+    s.addShape('rect', { x: x + 0.25, y: y + 0.72, w: 0.5, h: 0.03, fill: { color: C.copperDim } })
+    g[2].forEach((item, j) => {
+      const iy = y + 0.95 + j * 0.6
+      s.addShape('ellipse', { x: x + 0.25, y: iy + 0.06, w: 0.13, h: 0.13, fill: { color: g[1] } })
+      s.addText(item, { x: x + 0.5, y: iy, w: cardW - 0.7, h: 0.5, fontFace: FONT, fontSize: 12, color: C.white, valign: 'top' })
+    })
+  })
+
+  s.addText('Everything runs in the browser \u2014 no native app, no hardware drivers, no setup.', {
+    x: MX,
+    y: 6.35,
+    w: W - MX * 2,
+    h: 0.35,
+    fontFace: MONO,
+    fontSize: 11,
+    color: C.grayDim,
+    charSpacing: 1,
+    align: 'center',
+  })
+}
+
+/* ======================================================================== */
+/* 10 — IMPACT / WHO IT'S FOR                                               */
 /* ======================================================================== */
 {
   const s = newSlide()
@@ -605,7 +666,106 @@ function card(s, { x, y, w, h, fill = C.panel }) {
 }
 
 /* ======================================================================== */
-/* 10 — ROADMAP + ASK / THANK YOU                                          */
+/* 11 — BUSINESS MODEL                                                      */
+/* ======================================================================== */
+{
+  const s = newSlide()
+  heading(s, 'BUSINESS MODEL', 'Free to learn, sustainable to grow')
+
+  const tiers = [
+    ['FREE', 'Students & makers', [
+      'Full 3D lab & core components',
+      'AI tutor (fair-use)',
+      'Guided Build Path',
+    ], false],
+    ['PRO', 'Power users', [
+      'Advanced parts & unlimited AI',
+      'Save & share unlimited circuits',
+      'Export to real PCB layouts',
+    ], true],
+    ['CLASSROOM', 'Schools & bootcamps', [
+      'Teacher dashboard & cohorts',
+      'Assignments & progress tracking',
+      'Seat-based institutional license',
+    ], false],
+  ]
+  const cw = (W - MX * 2 - 0.8) / 3
+  tiers.forEach((t, i) => {
+    const x = MX + i * (cw + 0.4)
+    const y = 2.6
+    const featured = t[3]
+    card(s, { x, y, w: cw, h: 3.5, fill: featured ? C.panel2 : C.panel })
+    if (featured) {
+      s.addShape('rect', { x: x + 0.25, y, w: cw - 0.5, h: 0.06, fill: { color: C.red } })
+      s.addText('MOST POPULAR', { x: x + 0.3, y: y + 0.18, w: cw - 0.6, h: 0.3, fontFace: MONO, fontSize: 9, bold: true, color: C.red, charSpacing: 2 })
+    }
+    s.addText(t[0], { x: x + 0.3, y: y + (featured ? 0.5 : 0.32), w: cw - 0.6, h: 0.5, fontFace: FONT, fontSize: 24, bold: true, color: featured ? C.red : C.white })
+    s.addText(t[1], { x: x + 0.3, y: y + (featured ? 1.05 : 0.85), w: cw - 0.6, h: 0.35, fontFace: MONO, fontSize: 10, color: C.gray, charSpacing: 1 })
+    s.addShape('rect', { x: x + 0.3, y: y + (featured ? 1.5 : 1.3), w: cw - 0.6, h: 0.015, fill: { color: C.stroke } })
+    t[2].forEach((f, j) => {
+      const fy = y + (featured ? 1.75 : 1.55) + j * 0.52
+      s.addText('\u2713', { x: x + 0.3, y: fy, w: 0.3, h: 0.35, fontFace: FONT, fontSize: 13, bold: true, color: C.green })
+      s.addText(f, { x: x + 0.6, y: fy, w: cw - 0.85, h: 0.5, fontFace: FONT, fontSize: 11.5, color: C.gray, lineSpacingMultiple: 1.05 })
+    })
+  })
+
+  s.addText('Land free with students \u2192 expand into paid Pro & Classroom seats. Low marginal cost \u2014 no hardware to ship.', {
+    x: MX,
+    y: 6.35,
+    w: W - MX * 2,
+    h: 0.35,
+    fontFace: MONO,
+    fontSize: 11,
+    color: C.grayDim,
+    charSpacing: 1,
+    align: 'center',
+  })
+}
+
+/* ======================================================================== */
+/* 12 — SCALABILITY & FEASIBILITY                                           */
+/* ======================================================================== */
+{
+  const s = newSlide()
+  heading(s, 'SCALABILITY & FEASIBILITY', 'Ready today, built to grow')
+
+  const cardW = (W - MX * 2 - 0.5) / 2
+
+  // left: why it scales
+  card(s, { x: MX, y: 2.6, w: cardW, h: 3.6 })
+  s.addText('WHY IT SCALES', { x: MX + 0.3, y: 2.85, w: cardW - 0.6, h: 0.35, fontFace: MONO, fontSize: 13, bold: true, color: C.red, charSpacing: 2 })
+  const scale = [
+    ['Client-side compute', 'The 3D lab and circuit engine run in the user\u2019s browser \u2014 adding users costs us almost nothing.'],
+    ['Edge-hosted & serverless', 'Next.js on Vercel scales automatically with demand, from 10 users to 100,000.'],
+    ['Content, not code', 'New components and projects are data-driven \u2014 the library grows without re-engineering.'],
+  ]
+  scale.forEach((it, i) => {
+    const y = 3.35 + i * 0.95
+    s.addShape('ellipse', { x: MX + 0.3, y: y + 0.05, w: 0.16, h: 0.16, fill: { color: C.green } })
+    s.addText(it[0], { x: MX + 0.62, y, w: cardW - 0.9, h: 0.3, fontFace: FONT, fontSize: 15, bold: true, color: C.white })
+    s.addText(it[1], { x: MX + 0.62, y: y + 0.32, w: cardW - 0.9, h: 0.6, fontFace: FONT, fontSize: 12, color: C.gray, lineSpacingMultiple: 1.1 })
+  })
+
+  // right: feasibility / proof
+  const rx = MX + cardW + 0.5
+  card(s, { x: rx, y: 2.6, w: cardW, h: 3.6 })
+  s.addText('FEASIBILITY \u2014 ALREADY REAL', { x: rx + 0.3, y: 2.85, w: cardW - 0.6, h: 0.35, fontFace: MONO, fontSize: 13, bold: true, color: C.red, charSpacing: 2 })
+  const proof = [
+    'Working platform \u2014 not a mockup',
+    'Live 3D lab, circuit engine & AI tutor ship today',
+    'Built on proven, production-grade web tech',
+    'No supply chain, inventory, or hardware logistics',
+    'Instant global distribution via a URL',
+  ]
+  proof.forEach((p, i) => {
+    const y = 3.4 + i * 0.55
+    s.addText('\u2713', { x: rx + 0.3, y, w: 0.3, h: 0.35, fontFace: FONT, fontSize: 14, bold: true, color: C.green })
+    s.addText(p, { x: rx + 0.62, y, w: cardW - 0.9, h: 0.45, fontFace: FONT, fontSize: 13.5, color: C.white, valign: 'top' })
+  })
+}
+
+/* ======================================================================== */
+/* 13 — ROADMAP + ASK / THANK YOU                                          */
 /* ======================================================================== */
 {
   const s = newSlide()
