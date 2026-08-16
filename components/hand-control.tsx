@@ -276,7 +276,7 @@ const useStyles = makeStyles({
   },
   pip: {
     position: 'fixed',
-    right: '18px',
+    left: '18px',
     bottom: '18px',
     zIndex: 9002,
     pointerEvents: 'auto',
@@ -286,6 +286,7 @@ const useStyles = makeStyles({
     border: `1px solid ${PCB.strokeRed}`,
     backgroundColor: tokens.colorNeutralBackground1,
     boxShadow: tokens.shadow16,
+    touchAction: 'none',
   },
   pipVideoWrap: {
     position: 'relative',
@@ -316,6 +317,8 @@ const useStyles = makeStyles({
     alignItems: 'center',
     gap: '8px',
     padding: '6px 8px',
+    cursor: 'grab',
+    ':active': { cursor: 'grabbing' },
   },
   pipHint: {
     padding: '0 8px 8px',
@@ -890,7 +893,7 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
       )}
 
       {enabled && status !== 'error' && (
-        <div className={styles.pip}>
+        <div ref={pipRef} className={styles.pip} style={pipStyle}>
           <div className={styles.pipVideoWrap}>
             <video
               style={{ transform: 'scaleX(-1)' }}
@@ -909,7 +912,7 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
               aria-hidden
             />
           </div>
-          <div className={styles.pipBar}>
+          <div className={styles.pipBar} onPointerDown={startPipDrag} title="Drag to move the camera feed">
             <span
               className={`${styles.trackLed} ${pose?.visible ? styles.trackLive : styles.trackSearch}`}
               aria-hidden
@@ -938,11 +941,11 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
           <div className={styles.pipHint}>
             <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
               {pose?.visible
-                ? pose.pinch
-                  ? 'Pinch held — holding / dragging'
-                  : pose.fist
-                    ? 'Fist — open your hand to zoom in'
-                    : 'Index moves cursor · pinch to select · open / close to zoom'
+                ? pose.fist
+                  ? 'Fist — move to orbit the view'
+                  : pose.pinch
+                    ? 'Pinch — select / drag · pinch twice to drop'
+                    : 'Fist orbits · open / close zooms · pinch selects & drags'
                 : 'Move your hand into view'}
             </Text>
           </div>
