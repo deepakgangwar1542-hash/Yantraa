@@ -10,6 +10,7 @@ import {
   CubeMultiple24Filled,
   BrainCircuit24Filled,
   BookOpen24Filled,
+  Rocket24Filled,
   ArrowRight20Filled,
   WeatherMoon20Regular,
   WeatherSunny20Regular,
@@ -20,7 +21,11 @@ import { COMPONENTS } from '@/lib/electronics-data'
 import { ComponentShape } from '@/components/lab/component-mesh'
 import { SIGNAL, COPPER, GLOW, MONO_STACK, PCB } from '@/lib/theme'
 
-const HeroCanvas = dynamic(() => import('@/components/landing/hero-canvas'), { ssr: false })
+// Reuse the app's ambient schematic as the landing background (client-only).
+const AmbientBackground = dynamic(
+  () => import('@/components/ambient-background').then((m) => m.AmbientBackground),
+  { ssr: false },
+)
 
 const EASE = 'cubic-bezier(0.2, 0.8, 0.2, 1)'
 
@@ -84,17 +89,17 @@ const useStyles = makeStyles({
     backgroundColor: PCB.base,
     color: tokens.colorNeutralForeground1,
   },
-  // Faint PCB graticule: an instrument grid dusted with one cool red glow,
-  // matching the app's oscilloscope/board substrate instead of glossy blobs.
-  grain: {
+  // The app's Living Schematic canvas, pinned behind all content.
+  bgLayer: {
     position: 'fixed',
     inset: 0,
-    zIndex: 1,
+    zIndex: 0,
     pointerEvents: 'none',
-    backgroundImage:
-      'linear-gradient(rgba(255,70,58,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,70,58,0.045) 1px, transparent 1px), radial-gradient(1200px 680px at 50% -8%, rgba(255,45,45,0.10) 0%, transparent 60%)',
-    backgroundSize: '48px 48px, 48px 48px, 100% 100%',
-    maskImage: 'radial-gradient(circle at 50% 30%, #000 0%, #000 55%, transparent 92%)',
+  },
+  // All page content sits above the schematic background.
+  content: {
+    position: 'relative',
+    zIndex: 1,
   },
   /* Nav */
   nav: {
@@ -184,10 +189,14 @@ const useStyles = makeStyles({
     paddingTop: '120px',
     paddingBottom: '80px',
   },
-  heroCanvas: {
+  // Soft radial vignette so the hero copy stays legible over the schematic.
+  heroScrim: {
     position: 'absolute',
     inset: 0,
     zIndex: 0,
+    pointerEvents: 'none',
+    backgroundImage:
+      'radial-gradient(ellipse 78% 62% at 50% 46%, rgba(9,11,13,0.92) 0%, rgba(9,11,13,0.78) 45%, rgba(9,11,13,0.28) 72%, transparent 100%)',
   },
   heroInner: {
     position: 'relative',
@@ -653,6 +662,12 @@ const FEATURES = [
     title: 'The Component Library',
     body: 'Explore every part in interactive 3D: pinouts, polarity, difficulty, and real-world uses, so a datasheet finally makes intuitive sense.',
   },
+  {
+    n: '04',
+    icon: <Rocket24Filled />,
+    title: 'The Build Path',
+    body: 'Follow a guided roadmap of hands-on projects \u2014 from your first glowing LED to sensor-driven logic \u2014 wiring each real circuit in the 3D lab, step by step, until it comes alive.',
+  },
 ]
 
 const STEPS = [
@@ -757,7 +772,6 @@ export function LandingPage() {
   const { mode, toggle } = useThemeMode()
   const [scrolled, setScrolled] = React.useState(false)
   const heroRef = React.useRef<HTMLDivElement>(null)
-  const { ref: heroCanvasRef, inView: heroInView } = useInView<HTMLDivElement>('0px')
   const [heroFade, setHeroFade] = React.useState(1)
 
   React.useEffect(() => {
@@ -774,8 +788,12 @@ export function LandingPage() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.grain} aria-hidden />
+      {/* The app's signature "Living Schematic" — same background everywhere. */}
+      <div className={styles.bgLayer} aria-hidden>
+        <AmbientBackground />
+      </div>
 
+      <div className={styles.content}>
       {/* Nav */}
       <nav className={mergeClasses(styles.nav, scrolled && styles.navScrolled)} aria-label="Primary">
         <Link href="#top" className={styles.brand} aria-label="YANTRAA home">
@@ -807,9 +825,7 @@ export function LandingPage() {
 
       {/* Hero */}
       <header id="top" className={styles.hero} ref={heroRef}>
-        <div className={styles.heroCanvas} ref={heroCanvasRef} aria-hidden>
-          {heroInView && <HeroCanvas />}
-        </div>
+        <div className={styles.heroScrim} aria-hidden />
         <div
           className={styles.heroInner}
           style={{ opacity: heroFade, transform: `translateY(${(1 - heroFade) * -30}px)` }}
@@ -850,7 +866,7 @@ export function LandingPage() {
         <Reveal>
           <div className={styles.sectionHead}>
             <span className={styles.kicker}>Why Yantraa</span>
-            <h2 className={styles.h2}>Three tools, one workshop.</h2>
+            <h2 className={styles.h2}>Four tools, one workshop.</h2>
             <p className={styles.lead}>
               Everything a beginner needs to go from confused to confident — visual, interactive, and grounded in
               real components.
@@ -937,9 +953,10 @@ export function LandingPage() {
           <span className={styles.brandWord}>YANTRAA</span>
         </Link>
         <span className={styles.footerNote}>
-          Learn electronics in 3D · Built for 1st &amp; 2nd year students
+          Learn electronics in 3D &middot; Built for 1st &amp; 2nd year students
         </span>
       </footer>
+      </div>
     </div>
   )
 }
