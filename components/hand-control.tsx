@@ -570,8 +570,8 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
     if (!enabled) return
 
     // Gesture tuning constants.
-    const FIST_ON = 0.16 // squeeze into a tight fist → orbit engages
-    const FIST_OFF = 0.26 // relax past this → orbit releases
+    const FIST_ON = 0.1 // orbit engages ONLY on a fully closed fist
+    const FIST_OFF = 0.2 // the moment the hand starts opening, orbit releases
     const ZOOM_STEP = 0.07 // openness delta per zoom "notch"
     const GRAB_MOVE = 0.03 // hand travel (normalized) that turns a pinch into a grab
     const DOUBLE_PINCH_MS = 650 // two pinches within this window = "pinch twice"
