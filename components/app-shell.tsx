@@ -515,7 +515,6 @@ function AppShellInner() {
           <span className={styles.badge}>
             <span className={styles.led} aria-hidden />
             <span className={styles.badgeText}>SYSTEM ONLINE</span>
-            <span className={styles.badgeMuted}>· 1ST&ndash;2ND YR</span>
           </span>
         </header>
 

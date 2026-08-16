@@ -839,7 +839,7 @@ export function LandingPage() {
           </h1>
           <p className={styles.tagline}>Build real circuits in a spatial 3D lab — before you ever touch a wire.</p>
           <p className={styles.sub}>
-            A flagship learning platform for 1st &amp; 2nd year engineering students: an AI hardware tutor, a 3D
+            A flagship learning platform for engineering students: an AI hardware tutor, a 3D
             component library, and a spatial circuit-building lab where the parts come alive.
           </p>
           <div className={styles.ctaRow}>
@@ -854,7 +854,7 @@ export function LandingPage() {
               </Button>
             </Link>
           </div>
-          <p className={styles.trust}>No hardware required · For 1st &amp; 2nd year students</p>
+          <p className={styles.trust}>No hardware required</p>
         </div>
         <span className={styles.scrollCue} aria-hidden>
           <ChevronDown20Regular />
@@ -953,7 +953,7 @@ export function LandingPage() {
           <span className={styles.brandWord}>YANTRAA</span>
         </Link>
         <span className={styles.footerNote}>
-          Learn electronics in 3D &middot; Built for 1st &amp; 2nd year students
+          Learn electronics in 3D &middot; No hardware required
         </span>
       </footer>
       </div>
