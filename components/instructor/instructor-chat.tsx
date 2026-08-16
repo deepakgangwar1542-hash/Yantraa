@@ -70,7 +70,14 @@ const useStyles = makeStyles({
     textAlign: 'center',
     gap: tokens.spacingVerticalM,
     paddingTop: tokens.spacingVerticalXXL,
-    paddingBottom: tokens.spacingVerticalL,
+    paddingBottom: tokens.spacingVerticalXXL,
+    paddingLeft: tokens.spacingHorizontalXL,
+    paddingRight: tokens.spacingHorizontalXL,
+    borderRadius: '10px',
+    // Soft PCB vignette so the schematic ambient dims under the hero copy for
+    // legibility, while still bleeding through at the edges.
+    backgroundImage:
+      'radial-gradient(ellipse 96% 72% at 50% 44%, rgba(9,11,13,0.94) 0%, rgba(9,11,13,0.86) 48%, rgba(9,11,13,0.35) 74%, transparent 100%)',
   },
   // IC-chip brand mark: dark package, signal-red die, breathing glow + pin rails.
   heroMark: {

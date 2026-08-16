@@ -10,6 +10,7 @@ import {
   CubeMultiple24Filled,
   BrainCircuit24Filled,
   BookOpen24Filled,
+  Rocket24Filled,
   ArrowRight20Filled,
   WeatherMoon20Regular,
   WeatherSunny20Regular,
@@ -18,8 +19,13 @@ import {
 import { useThemeMode } from '@/app/providers'
 import { COMPONENTS } from '@/lib/electronics-data'
 import { ComponentShape } from '@/components/lab/component-mesh'
+import { SIGNAL, COPPER, GLOW, MONO_STACK, PCB } from '@/lib/theme'
 
-const HeroCanvas = dynamic(() => import('@/components/landing/hero-canvas'), { ssr: false })
+// Reuse the app's ambient schematic as the landing background (client-only).
+const AmbientBackground = dynamic(
+  () => import('@/components/ambient-background').then((m) => m.AmbientBackground),
+  { ssr: false },
+)
 
 const EASE = 'cubic-bezier(0.2, 0.8, 0.2, 1)'
 
@@ -80,17 +86,20 @@ const useStyles = makeStyles({
     minHeight: '100dvh',
     width: '100%',
     overflowX: 'hidden',
-    backgroundColor: tokens.colorNeutralBackground2,
+    backgroundColor: PCB.base,
     color: tokens.colorNeutralForeground1,
   },
-  grain: {
+  // The app's Living Schematic canvas, pinned behind all content.
+  bgLayer: {
     position: 'fixed',
     inset: 0,
-    zIndex: 1,
+    zIndex: 0,
     pointerEvents: 'none',
-    opacity: 0.5,
-    backgroundImage:
-      'radial-gradient(1100px 620px at 15% -5%, rgba(224,17,44,0.16) 0%, transparent 60%), radial-gradient(900px 600px at 100% 8%, rgba(224,17,44,0.10) 0%, transparent 55%), radial-gradient(1000px 700px at 50% 120%, rgba(224,17,44,0.12) 0%, transparent 60%)',
+  },
+  // All page content sits above the schematic background.
+  content: {
+    position: 'relative',
+    zIndex: 1,
   },
   /* Nav */
   nav: {
@@ -114,9 +123,9 @@ const useStyles = makeStyles({
   navScrolled: {
     paddingTop: '10px',
     paddingBottom: '10px',
-    backgroundColor: 'color-mix(in srgb, ' + tokens.colorNeutralBackground2 + ' 78%, transparent)',
+    backgroundColor: 'rgba(9,11,13,0.8)',
     backdropFilter: 'blur(14px)',
-    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderBottom: `1px solid ${PCB.strokeRed}`,
   },
   brand: {
     display: 'flex',
@@ -125,20 +134,25 @@ const useStyles = makeStyles({
     textDecoration: 'none',
     color: tokens.colorNeutralForeground1,
   },
+  // IC-chip package: dark body, red die glow, crisp corners — the shared mark.
   brandGlyph: {
     display: 'grid',
     placeItems: 'center',
     width: '34px',
     height: '34px',
-    borderRadius: '9px',
+    borderRadius: '7px',
     color: '#fff',
-    background: `linear-gradient(135deg, ${tokens.colorBrandBackground}, #7A011C)`,
-    boxShadow: '0 0 18px rgba(224,17,44,0.5)',
+    border: `1px solid ${SIGNAL.red}`,
+    backgroundColor: '#141416',
+    backgroundImage:
+      'radial-gradient(circle at 50% 45%, rgba(255,45,45,0.55), rgba(255,45,45,0.08) 60%, transparent 72%)',
+    boxShadow: GLOW.md,
   },
   brandWord: {
-    fontSize: '17px',
-    fontWeight: 800,
-    letterSpacing: '0.22em',
+    fontFamily: MONO_STACK,
+    fontSize: '16px',
+    fontWeight: 700,
+    letterSpacing: '0.24em',
   },
   navLinks: {
     display: 'flex',
@@ -175,10 +189,14 @@ const useStyles = makeStyles({
     paddingTop: '120px',
     paddingBottom: '80px',
   },
-  heroCanvas: {
+  // Soft radial vignette so the hero copy stays legible over the schematic.
+  heroScrim: {
     position: 'absolute',
     inset: 0,
     zIndex: 0,
+    pointerEvents: 'none',
+    backgroundImage:
+      'radial-gradient(ellipse 78% 62% at 50% 46%, rgba(9,11,13,0.92) 0%, rgba(9,11,13,0.78) 45%, rgba(9,11,13,0.28) 72%, transparent 100%)',
   },
   heroInner: {
     position: 'relative',
@@ -196,25 +214,26 @@ const useStyles = makeStyles({
     display: 'inline-flex',
     alignItems: 'center',
     gap: '8px',
-    paddingLeft: '14px',
-    paddingRight: '14px',
+    paddingLeft: '12px',
+    paddingRight: '12px',
     paddingTop: '6px',
     paddingBottom: '6px',
-    borderRadius: '999px',
-    border: `1px solid ${tokens.colorBrandStroke1}`,
-    color: tokens.colorBrandForeground1,
-    backgroundColor: 'color-mix(in srgb, ' + tokens.colorBrandBackground + ' 12%, transparent)',
-    fontSize: '12px',
-    fontWeight: 700,
-    letterSpacing: '0.14em',
+    borderRadius: '4px',
+    border: `1px solid ${PCB.strokeRed}`,
+    color: SIGNAL.hot,
+    backgroundColor: 'rgba(255,45,45,0.08)',
+    fontFamily: MONO_STACK,
+    fontSize: '11px',
+    fontWeight: 600,
+    letterSpacing: '0.16em',
     textTransform: 'uppercase',
   },
   eyebrowDot: {
     width: '7px',
     height: '7px',
     borderRadius: '50%',
-    backgroundColor: tokens.colorBrandBackground,
-    boxShadow: '0 0 10px rgba(224,17,44,0.9)',
+    backgroundColor: SIGNAL.red,
+    boxShadow: GLOW.sm,
   },
   wordmark: {
     margin: 0,
@@ -223,10 +242,10 @@ const useStyles = makeStyles({
     letterSpacing: 'clamp(0.06em, 1.4vw, 0.18em)',
     fontSize: 'clamp(56px, 15vw, 190px)',
     color: tokens.colorNeutralForeground1,
-    textShadow: '0 0 60px rgba(224,17,44,0.25)',
+    textShadow: '0 0 60px rgba(255,45,45,0.28)',
   },
   wordmarkA: {
-    background: 'linear-gradient(180deg, #FF3B54 0%, #E0112C 55%, #91041C 100%)',
+    background: `linear-gradient(180deg, ${SIGNAL.hot} 0%, ${SIGNAL.red} 55%, ${SIGNAL.cool} 100%)`,
     WebkitBackgroundClip: 'text',
     backgroundClip: 'text',
     color: 'transparent',
@@ -298,11 +317,12 @@ const useStyles = makeStyles({
     maxWidth: '640px',
   },
   kicker: {
+    fontFamily: MONO_STACK,
     fontSize: '12px',
-    fontWeight: 800,
+    fontWeight: 600,
     letterSpacing: '0.2em',
     textTransform: 'uppercase',
-    color: tokens.colorBrandForeground1,
+    color: SIGNAL.hot,
   },
   h2: {
     margin: 0,
@@ -346,40 +366,62 @@ const useStyles = makeStyles({
     gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
     gap: '22px',
   },
+  // Feature tile as a labeled chip on the board: crisp corners, red-tinted
+  // hairline, a copper trace along the top edge that energizes on hover.
   card: {
     position: 'relative',
     display: 'flex',
     flexDirection: 'column',
     gap: '16px',
     padding: '30px',
-    borderRadius: '16px',
-    backgroundColor: tokens.colorNeutralBackground1,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: '8px',
+    backgroundColor: PCB.panel1,
+    border: `1px solid ${PCB.strokeRed}`,
     overflow: 'hidden',
     transitionProperty: 'transform, border-color, box-shadow',
     transitionDuration: '200ms',
     transitionTimingFunction: EASE,
+    '::before': {
+      content: '""',
+      position: 'absolute',
+      top: 0,
+      left: '16px',
+      right: '16px',
+      height: '2px',
+      background: `linear-gradient(90deg, transparent, ${COPPER.idle} 20%, ${COPPER.idle} 80%, transparent)`,
+      opacity: 0.6,
+      transitionProperty: 'opacity, background',
+      transitionDuration: '200ms',
+    },
     ':hover': {
       transform: 'translateY(-6px)',
-      border: `1px solid ${tokens.colorBrandStroke1}`,
-      boxShadow: '0 18px 50px -20px rgba(224,17,44,0.4)',
+      borderTopColor: SIGNAL.red,
+      borderRightColor: SIGNAL.red,
+      borderBottomColor: SIGNAL.red,
+      borderLeftColor: SIGNAL.red,
+      boxShadow: GLOW.md,
+    },
+    ':hover::before': {
+      opacity: 1,
+      background: `linear-gradient(90deg, transparent, ${SIGNAL.red} 20%, ${SIGNAL.hot} 50%, ${SIGNAL.red} 80%, transparent)`,
     },
   },
   cardNum: {
+    fontFamily: MONO_STACK,
     fontSize: '13px',
-    fontWeight: 800,
+    fontWeight: 600,
     letterSpacing: '0.16em',
-    color: tokens.colorNeutralForeground4,
+    color: SIGNAL.hot,
   },
   cardIcon: {
     display: 'grid',
     placeItems: 'center',
     width: '48px',
     height: '48px',
-    borderRadius: '12px',
-    color: tokens.colorBrandForeground1,
-    border: `1px solid ${tokens.colorBrandStroke1}`,
-    backgroundColor: 'color-mix(in srgb, ' + tokens.colorBrandBackground + ' 10%, transparent)',
+    borderRadius: '8px',
+    color: SIGNAL.hot,
+    border: `1px solid ${PCB.strokeRed}`,
+    backgroundColor: 'rgba(255,45,45,0.08)',
   },
   cardTitle: {
     margin: 0,
@@ -403,12 +445,11 @@ const useStyles = makeStyles({
   },
   stage: {
     position: 'relative',
-    borderRadius: '18px',
+    borderRadius: '8px',
     overflow: 'hidden',
     minHeight: '440px',
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-    background:
-      'radial-gradient(120% 90% at 50% 10%, #17171d 0%, #0b0b0d 70%)',
+    border: `1px solid ${PCB.strokeRed}`,
+    background: `radial-gradient(120% 90% at 50% 10%, ${PCB.panel2} 0%, ${PCB.base} 70%)`,
   },
   stageBadge: {
     position: 'absolute',
@@ -419,23 +460,25 @@ const useStyles = makeStyles({
     alignItems: 'center',
     gap: '7px',
     padding: '6px 12px',
-    borderRadius: '999px',
-    backgroundColor: 'rgba(11,11,13,0.7)',
+    borderRadius: '4px',
+    backgroundColor: 'rgba(9,11,13,0.8)',
     backdropFilter: 'blur(8px)',
-    border: '1px solid rgba(255,255,255,0.1)',
+    border: `1px solid ${PCB.strokeRed}`,
     color: '#fff',
-    fontSize: '12px',
-    fontWeight: 700,
-    letterSpacing: '0.04em',
+    fontFamily: MONO_STACK,
+    fontSize: '11px',
+    fontWeight: 600,
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
   },
   spec: {
     display: 'flex',
     flexDirection: 'column',
     gap: '18px',
     padding: '30px',
-    borderRadius: '18px',
-    backgroundColor: tokens.colorNeutralBackground1,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: '8px',
+    backgroundColor: PCB.panel1,
+    border: `1px solid ${PCB.strokeRed}`,
     minWidth: 0,
   },
   specName: {
@@ -452,18 +495,21 @@ const useStyles = makeStyles({
   chip: {
     display: 'inline-flex',
     alignItems: 'center',
-    padding: '4px 11px',
-    borderRadius: '999px',
-    fontSize: '12px',
-    fontWeight: 700,
-    letterSpacing: '0.02em',
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    padding: '4px 10px',
+    borderRadius: '4px',
+    fontFamily: MONO_STACK,
+    fontSize: '11px',
+    fontWeight: 600,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    border: `1px solid ${PCB.strokeRed}`,
     color: tokens.colorNeutralForeground2,
   },
   chipRed: {
     border: '1px solid transparent',
     color: '#fff',
-    backgroundColor: tokens.colorBrandBackground,
+    backgroundColor: SIGNAL.red,
+    boxShadow: GLOW.sm,
   },
   specTagline: {
     margin: 0,
@@ -477,7 +523,7 @@ const useStyles = makeStyles({
     lineHeight: 1.55,
     color: tokens.colorNeutralForeground3,
     paddingLeft: '14px',
-    borderLeft: `2px solid ${tokens.colorBrandStroke1}`,
+    borderLeft: `2px solid ${SIGNAL.red}`,
   },
   thumbStrip: {
     display: 'flex',
@@ -488,25 +534,25 @@ const useStyles = makeStyles({
   thumb: {
     width: '38px',
     height: '38px',
-    borderRadius: '10px',
+    borderRadius: '6px',
     display: 'grid',
     placeItems: 'center',
     cursor: 'pointer',
     fontSize: '11px',
     fontWeight: 800,
     letterSpacing: '0.02em',
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-    backgroundColor: tokens.colorNeutralBackground3,
+    border: `1px solid ${PCB.strokeRed}`,
+    backgroundColor: PCB.panel2,
     color: tokens.colorNeutralForeground2,
     transitionProperty: 'transform, border-color, color',
     transitionDuration: '140ms',
     ':hover': { transform: 'translateY(-2px)', color: tokens.colorNeutralForeground1 },
   },
   thumbActive: {
-    border: `1px solid ${tokens.colorBrandStroke1}`,
+    border: `1px solid ${SIGNAL.red}`,
     color: '#fff',
-    backgroundColor: 'color-mix(in srgb, ' + tokens.colorBrandBackground + ' 22%, transparent)',
-    boxShadow: '0 0 0 1px rgba(224,17,44,0.4), 0 6px 18px -8px rgba(224,17,44,0.6)',
+    backgroundColor: 'rgba(255,45,45,0.18)',
+    boxShadow: GLOW.sm,
   },
   /* Steps */
   steps: {
@@ -520,20 +566,24 @@ const useStyles = makeStyles({
     flexDirection: 'column',
     gap: '12px',
     padding: '28px',
-    borderRadius: '16px',
-    backgroundColor: tokens.colorNeutralBackground1,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: '8px',
+    backgroundColor: PCB.panel1,
+    border: `1px solid ${PCB.strokeRed}`,
   },
   stepNum: {
     display: 'grid',
     placeItems: 'center',
     width: '40px',
     height: '40px',
-    borderRadius: '50%',
-    fontWeight: 800,
+    borderRadius: '8px',
+    fontFamily: MONO_STACK,
+    fontWeight: 700,
     color: '#fff',
-    background: `linear-gradient(135deg, ${tokens.colorBrandBackground}, #7A011C)`,
-    boxShadow: '0 0 16px rgba(224,17,44,0.45)',
+    border: `1px solid ${SIGNAL.red}`,
+    backgroundColor: '#141416',
+    backgroundImage:
+      'radial-gradient(circle at 50% 45%, rgba(255,45,45,0.5), transparent 72%)',
+    boxShadow: GLOW.sm,
   },
   /* CTA */
   ctaBanner: {
@@ -543,13 +593,14 @@ const useStyles = makeStyles({
     maxWidth: '1100px',
     marginLeft: 'clamp(20px, 6vw, 72px)',
     marginRight: 'clamp(20px, 6vw, 72px)',
-    borderRadius: '24px',
+    borderRadius: '12px',
     overflow: 'hidden',
     padding: 'clamp(40px, 7vw, 80px)',
     textAlign: 'center',
     color: '#fff',
-    background: `radial-gradient(120% 140% at 50% -20%, #FF3B54 0%, ${tokens.colorBrandBackground} 40%, #6B0016 100%)`,
-    boxShadow: '0 30px 80px -30px rgba(224,17,44,0.6)',
+    border: `1px solid ${SIGNAL.red}`,
+    background: `radial-gradient(120% 140% at 50% -20%, ${SIGNAL.hot} 0%, ${SIGNAL.red} 40%, ${SIGNAL.cool} 100%)`,
+    boxShadow: '0 30px 80px -30px rgba(255,45,45,0.6)',
   },
   ctaTitle: {
     margin: '0 0 14px',
@@ -588,7 +639,7 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground4,
   },
   glowBtn: {
-    boxShadow: '0 8px 30px -8px rgba(224,17,44,0.7)',
+    boxShadow: GLOW.md,
   },
 })
 
@@ -610,6 +661,12 @@ const FEATURES = [
     icon: <BookOpen24Filled />,
     title: 'The Component Library',
     body: 'Explore every part in interactive 3D: pinouts, polarity, difficulty, and real-world uses, so a datasheet finally makes intuitive sense.',
+  },
+  {
+    n: '04',
+    icon: <Rocket24Filled />,
+    title: 'The Build Path',
+    body: 'Follow a guided roadmap of hands-on projects \u2014 from your first glowing LED to sensor-driven logic \u2014 wiring each real circuit in the 3D lab, step by step, until it comes alive.',
   },
 ]
 
@@ -715,7 +772,6 @@ export function LandingPage() {
   const { mode, toggle } = useThemeMode()
   const [scrolled, setScrolled] = React.useState(false)
   const heroRef = React.useRef<HTMLDivElement>(null)
-  const { ref: heroCanvasRef, inView: heroInView } = useInView<HTMLDivElement>('0px')
   const [heroFade, setHeroFade] = React.useState(1)
 
   React.useEffect(() => {
@@ -732,8 +788,12 @@ export function LandingPage() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.grain} aria-hidden />
+      {/* The app's signature "Living Schematic" — same background everywhere. */}
+      <div className={styles.bgLayer} aria-hidden>
+        <AmbientBackground />
+      </div>
 
+      <div className={styles.content}>
       {/* Nav */}
       <nav className={mergeClasses(styles.nav, scrolled && styles.navScrolled)} aria-label="Primary">
         <Link href="#top" className={styles.brand} aria-label="YANTRAA home">
@@ -765,9 +825,7 @@ export function LandingPage() {
 
       {/* Hero */}
       <header id="top" className={styles.hero} ref={heroRef}>
-        <div className={styles.heroCanvas} ref={heroCanvasRef} aria-hidden>
-          {heroInView && <HeroCanvas />}
-        </div>
+        <div className={styles.heroScrim} aria-hidden />
         <div
           className={styles.heroInner}
           style={{ opacity: heroFade, transform: `translateY(${(1 - heroFade) * -30}px)` }}
@@ -808,7 +866,7 @@ export function LandingPage() {
         <Reveal>
           <div className={styles.sectionHead}>
             <span className={styles.kicker}>Why Yantraa</span>
-            <h2 className={styles.h2}>Three tools, one workshop.</h2>
+            <h2 className={styles.h2}>Four tools, one workshop.</h2>
             <p className={styles.lead}>
               Everything a beginner needs to go from confused to confident — visual, interactive, and grounded in
               real components.
@@ -895,9 +953,10 @@ export function LandingPage() {
           <span className={styles.brandWord}>YANTRAA</span>
         </Link>
         <span className={styles.footerNote}>
-          Learn electronics in 3D · Built for 1st &amp; 2nd year students
+          Learn electronics in 3D &middot; Built for 1st &amp; 2nd year students
         </span>
       </footer>
+      </div>
     </div>
   )
 }

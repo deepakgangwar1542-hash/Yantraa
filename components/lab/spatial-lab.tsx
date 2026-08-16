@@ -38,6 +38,8 @@ import {
   type WireEnd,
 } from '@/lib/circuit-engine'
 import { useHandControl } from '@/components/hand-control'
+import { useGuided } from '@/lib/guided-context'
+import { evaluateProgress } from '@/lib/projects'
 import { PCB, MONO_STACK, GLOW, STATUS } from '@/lib/theme'
 
 const LabScene = dynamic(
@@ -166,6 +168,20 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralStroke2,
     marginLeft: tokens.spacingHorizontalXXS,
     marginRight: tokens.spacingHorizontalXXS,
+  },
+  guidedTag: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    paddingLeft: tokens.spacingHorizontalS,
+    paddingRight: tokens.spacingHorizontalS,
+    height: '28px',
+    borderRadius: '4px',
+    fontFamily: MONO_STACK,
+    fontSize: '11px',
+    fontWeight: 600,
+    letterSpacing: '0.12em',
+    color: STATUS.active,
+    border: `1px solid ${PCB.strokeRed}`,
   },
   selectedCard: {
     position: 'absolute',
@@ -296,10 +312,65 @@ export function SpatialLab() {
   const [pendingWire, setPendingWire] = React.useState<WireEnd | null>(null)
   const [pressedIds, setPressedIds] = React.useState<ReadonlySet<string>>(new Set())
 
+  // ---- Guided "Build Path" mode -----------------------------------------
+  // The Build Path reuses this single lab instance so we never open a second
+  // WebGL context. When a project is active we pre-place its parts, force
+  // wire mode + always-live simulation, hide the palette, and stream build
+  // progress up to the workspace. Closing restores the free-build workbench.
+  const { activeProject, reportProgress } = useGuided()
+  const guided = activeProject != null
+  const activeProjectId = activeProject?.id ?? null
+  // Ref mirror so stable callbacks (deleteInstance) can read the latest value.
+  const guidedRef = React.useRef(guided)
+  guidedRef.current = guided
+
+  // Live mirrors of the editable state so we can snapshot the free-build
+  // workbench the instant a guided project opens, then restore it on close.
+  const stateRef = React.useRef({ placed, wires, mode, running, pressedIds })
+  stateRef.current = { placed, wires, mode, running, pressedIds }
+  const freeBuildSnapshot = React.useRef<typeof stateRef.current | null>(null)
+  const prevProjectId = React.useRef<string | null>(null)
+
+  React.useEffect(() => {
+    const prev = prevProjectId.current
+    prevProjectId.current = activeProjectId
+
+    if (activeProjectId && prev !== activeProjectId) {
+      // Entering (or switching) a guided project. Snapshot the free-build
+      // board once, on the first transition out of free mode.
+      if (!prev) freeBuildSnapshot.current = stateRef.current
+      setPlaced(activeProject!.targetPlaced.map((p) => ({ ...p })))
+      setWires([])
+      setSelectedId(null)
+      setPendingWire(null)
+      setPressedIds(new Set())
+      setMode('wire')
+      setRunning(true)
+    } else if (!activeProjectId && prev) {
+      // Leaving guided mode — restore the workbench exactly as it was.
+      const snap = freeBuildSnapshot.current
+      freeBuildSnapshot.current = null
+      setPlaced(snap ? snap.placed : [])
+      setWires(snap ? snap.wires : [])
+      setMode(snap ? snap.mode : 'move')
+      setRunning(snap ? snap.running : false)
+      setPressedIds(snap ? snap.pressedIds : new Set())
+      setSelectedId(null)
+      setPendingWire(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectId])
+
   const report = React.useMemo(
     () => analyzeCircuit(placed, wires, pressedIds),
     [placed, wires, pressedIds],
   )
+
+  // Stream guided progress to the workspace whenever the build changes.
+  React.useEffect(() => {
+    if (!activeProject) return
+    reportProgress(evaluateProgress(activeProject, wires, report))
+  }, [activeProject, wires, report, reportProgress])
 
   const addComponent = React.useCallback((componentId: string) => {
     setPlaced((prev) => {
@@ -386,6 +457,8 @@ export function SpatialLab() {
   }, [])
 
   const deleteInstance = React.useCallback((id: string) => {
+    // In guided mode the parts list is fixed — students only wire them up.
+    if (guidedRef.current) return
     setPlaced((prev) => prev.filter((p) => p.instanceId !== id))
     setWires((prev) => prev.filter((w) => w.from.instanceId !== id && w.to.instanceId !== id))
     setPressedIds((prev) => {
@@ -448,7 +521,11 @@ export function SpatialLab() {
         ? { text: 'Circuit OK', color: 'success' as const }
         : { text: 'No power', color: 'informative' as const }
 
-  const hintText = running
+  const hintText = guided
+    ? pendingWire
+      ? 'Now click the matching gold pin to complete this jumper. Follow the current step on the right.'
+      : 'Click a gold pin, then its pair, to lay a jumper wire. Watch the traces light up as current flows.'
+    : running
     ? 'Simulation running: check the Circuit panel for wiring issues. Press Stop to edit again.'
     : mode === 'wire'
       ? pendingWire
@@ -482,7 +559,7 @@ export function SpatialLab() {
         />
       </div>
 
-      {placed.length === 0 && (
+      {!guided && placed.length === 0 && (
         <div className={styles.emptyState}>
           <Add20Regular fontSize={28} />
           <Subtitle2 style={{ color: '#c7d3ea' }}>Your workbench is empty</Subtitle2>
@@ -490,72 +567,97 @@ export function SpatialLab() {
         </div>
       )}
 
-      {/* Palette */}
-      <div className={styles.panel}>
-        <div className={styles.panelHead}>
-          <Add20Regular />
-          <Subtitle2 style={{ color: 'inherit' }}>Components</Subtitle2>
+      {/* Palette — free-build only; guided projects come pre-stocked. */}
+      {!guided && (
+        <div className={styles.panel}>
+          <div className={styles.panelHead}>
+            <Add20Regular />
+            <Subtitle2 style={{ color: 'inherit' }}>Components</Subtitle2>
+          </div>
+          <div className={styles.palette}>
+            {COMPONENTS.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                className={styles.paletteItem}
+                onClick={() => addComponent(c.id)}
+              >
+                <span className={styles.swatch} style={{ backgroundColor: c.color }}>
+                  {c.symbol}
+                </span>
+                <span className={styles.itemText}>
+                  <span className={styles.itemName}>{c.name}</span>
+                  <Caption1 style={{ color: '#8496b5' }}>{c.category}</Caption1>
+                </span>
+                <Add20Regular style={{ color: tokens.colorBrandForeground1, flexShrink: 0 }} />
+              </button>
+            ))}
+          </div>
         </div>
-        <div className={styles.palette}>
-          {COMPONENTS.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              className={styles.paletteItem}
-              onClick={() => addComponent(c.id)}
-            >
-              <span className={styles.swatch} style={{ backgroundColor: c.color }}>
-                {c.symbol}
-              </span>
-              <span className={styles.itemText}>
-                <span className={styles.itemName}>{c.name}</span>
-                <Caption1 style={{ color: '#8496b5' }}>{c.category}</Caption1>
-              </span>
-              <Add20Regular style={{ color: tokens.colorBrandForeground1, flexShrink: 0 }} />
-            </button>
-          ))}
-        </div>
-      </div>
+      )}
 
       {/* Toolbar */}
       <div className={styles.toolbar}>
-        <Tooltip content="Move & arrange components" relationship="label">
-          <ToggleButton
-            appearance="subtle"
-            checked={mode === 'move'}
-            icon={<ArrowMove20Regular />}
-            onClick={() => switchMode('move')}
-          >
-            Move
-          </ToggleButton>
-        </Tooltip>
-        <Tooltip content="Connect pins with jumper wires" relationship="label">
-          <ToggleButton
-            appearance="subtle"
-            checked={mode === 'wire'}
-            icon={<Link20Regular />}
-            onClick={() => switchMode('wire')}
-          >
-            Wire
-          </ToggleButton>
-        </Tooltip>
-        <span className={styles.spacer} />
-        <Tooltip
-          content={running ? 'Stop the simulation' : 'Run the circuit (LEDs & buzzers activate)'}
-          relationship="label"
-        >
-          <ToggleButton
-            appearance={running ? 'primary' : 'subtle'}
-            checked={running}
-            icon={running ? <Stop20Regular /> : <Play20Regular />}
-            onClick={() => setRunning((r) => !r)}
-            disabled={placed.length === 0}
-            style={running ? { boxShadow: GLOW.md } : undefined}
-          >
-            {running ? 'Live' : 'Run'}
-          </ToggleButton>
-        </Tooltip>
-        <span className={styles.spacer} />
+        {guided ? (
+          <>
+            <span className={styles.guidedTag}>WIRE MODE · LIVE</span>
+            <Tooltip content="Remove all your jumper wires and start the wiring over" relationship="label">
+              <Button
+                appearance="subtle"
+                icon={<ArrowClockwise20Regular />}
+                onClick={() => {
+                  setWires([])
+                  setPendingWire(null)
+                  setSelectedId(null)
+                }}
+                disabled={wires.length === 0}
+              >
+                Reset wires
+              </Button>
+            </Tooltip>
+            <span className={styles.spacer} />
+          </>
+        ) : (
+          <>
+            <Tooltip content="Move & arrange components" relationship="label">
+              <ToggleButton
+                appearance="subtle"
+                checked={mode === 'move'}
+                icon={<ArrowMove20Regular />}
+                onClick={() => switchMode('move')}
+              >
+                Move
+              </ToggleButton>
+            </Tooltip>
+            <Tooltip content="Connect pins with jumper wires" relationship="label">
+              <ToggleButton
+                appearance="subtle"
+                checked={mode === 'wire'}
+                icon={<Link20Regular />}
+                onClick={() => switchMode('wire')}
+              >
+                Wire
+              </ToggleButton>
+            </Tooltip>
+            <span className={styles.spacer} />
+            <Tooltip
+              content={running ? 'Stop the simulation' : 'Run the circuit (LEDs & buzzers activate)'}
+              relationship="label"
+            >
+              <ToggleButton
+                appearance={running ? 'primary' : 'subtle'}
+                checked={running}
+                icon={running ? <Stop20Regular /> : <Play20Regular />}
+                onClick={() => setRunning((r) => !r)}
+                disabled={placed.length === 0}
+                style={running ? { boxShadow: GLOW.md } : undefined}
+              >
+                {running ? 'Live' : 'Run'}
+              </ToggleButton>
+            </Tooltip>
+            <span className={styles.spacer} />
+          </>
+        )}
         <Tooltip
           content={handsEnabled ? 'Turn off hand control' : 'Control the app with your hand (camera)'}
           relationship="label"
@@ -568,15 +670,17 @@ export function SpatialLab() {
             Hands
           </Button>
         </Tooltip>
-        <Tooltip content="Clear the whole board" relationship="label">
-          <Button
-            appearance="subtle"
-            icon={<ArrowClockwise20Regular />}
-            onClick={clearAll}
-            disabled={placed.length === 0}
-            aria-label="Clear board"
-          />
-        </Tooltip>
+        {!guided && (
+          <Tooltip content="Clear the whole board" relationship="label">
+            <Button
+              appearance="subtle"
+              icon={<ArrowClockwise20Regular />}
+              onClick={clearAll}
+              disabled={placed.length === 0}
+              aria-label="Clear board"
+            />
+          </Tooltip>
+        )}
       </div>
 
       {/* Selected info */}
