@@ -324,16 +324,40 @@ export function SpatialLab() {
   const guidedRef = React.useRef(guided)
   guidedRef.current = guided
 
+  // Live mirrors of the editable state so we can snapshot the free-build
+  // workbench the instant a guided project opens, then restore it on close.
+  const stateRef = React.useRef({ placed, wires, mode, running, pressedIds })
+  stateRef.current = { placed, wires, mode, running, pressedIds }
+  const freeBuildSnapshot = React.useRef<typeof stateRef.current | null>(null)
+  const prevProjectId = React.useRef<string | null>(null)
+
   React.useEffect(() => {
-    if (!activeProject) return
-    // Load this project's fixed layout with empty pins for the student to wire.
-    setPlaced(activeProject.targetPlaced.map((p) => ({ ...p })))
-    setWires([])
-    setSelectedId(null)
-    setPendingWire(null)
-    setPressedIds(new Set())
-    setMode('wire')
-    setRunning(true)
+    const prev = prevProjectId.current
+    prevProjectId.current = activeProjectId
+
+    if (activeProjectId && prev !== activeProjectId) {
+      // Entering (or switching) a guided project. Snapshot the free-build
+      // board once, on the first transition out of free mode.
+      if (!prev) freeBuildSnapshot.current = stateRef.current
+      setPlaced(activeProject!.targetPlaced.map((p) => ({ ...p })))
+      setWires([])
+      setSelectedId(null)
+      setPendingWire(null)
+      setPressedIds(new Set())
+      setMode('wire')
+      setRunning(true)
+    } else if (!activeProjectId && prev) {
+      // Leaving guided mode — restore the workbench exactly as it was.
+      const snap = freeBuildSnapshot.current
+      freeBuildSnapshot.current = null
+      setPlaced(snap ? snap.placed : [])
+      setWires(snap ? snap.wires : [])
+      setMode(snap ? snap.mode : 'move')
+      setRunning(snap ? snap.running : false)
+      setPressedIds(snap ? snap.pressedIds : new Set())
+      setSelectedId(null)
+      setPendingWire(null)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProjectId])
 
