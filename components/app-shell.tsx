@@ -102,7 +102,7 @@ const useStyles = makeStyles({
     height: '40px',
     borderRadius: tokens.borderRadiusLarge,
     color: tokens.colorNeutralForegroundOnBrand,
-    background: `linear-gradient(135deg, ${tokens.colorBrandBackground}, ${tokens.colorPaletteTealBackground2})`,
+    background: `linear-gradient(135deg, #FF3B54, ${tokens.colorBrandBackground} 55%, #7A011C)`,
     animationName: {
       '0%, 100%': {
         boxShadow: `0 0 0 0 ${tokens.colorBrandBackground2}`,
