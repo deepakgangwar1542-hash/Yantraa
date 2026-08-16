@@ -403,7 +403,6 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
   const rafRef = React.useRef<number>(0)
   const lastFrameRef = React.useRef(0)
   const poseRef = React.useRef<HandPose | null>(null)
-  const downTargetRef = React.useRef<Element | null>(null)
   const lastScrollYRef = React.useRef<number | null>(null)
   const smoothRef = React.useRef({ x: 0.5, y: 0.5 })
   const lastOpennessRef = React.useRef<number | null>(null)
@@ -413,6 +412,26 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
   const pinchPendingRef = React.useRef(0)
   const enabledRef = React.useRef(false)
   enabledRef.current = enabled
+
+  /* ---- gesture state machine refs --------------------------------- */
+  const lastXRef = React.useRef(window.innerWidth / 2)
+  const lastYRef = React.useRef(window.innerHeight / 2)
+  const prevPinchRef = React.useRef(false)
+  // Tight-fist → orbit the 3D view (hysteresis so it doesn't flicker).
+  const fistOnRef = React.useRef(false)
+  const orbitActiveRef = React.useRef(false)
+  const orbitPtrRef = React.useRef({ x: 0, y: 0 })
+  const orbitOriginRef = React.useRef({ nx: 0.5, ny: 0.5 })
+  const orbitCanvasRef = React.useRef<Element | null>(null)
+  // A normal pinch press (click / pin-connect / start of a drag).
+  const pressActiveRef = React.useRef(false)
+  const pressStartPosRef = React.useRef({ x: 0, y: 0 })
+  const pressMovedRef = React.useRef(false)
+  const pressTargetRef = React.useRef<Element | null>(null)
+  // A latched grab: after pinch-and-move on the canvas, the component stays held
+  // and follows the hand until a double-pinch releases it.
+  const grabbedRef = React.useRef(false)
+  const pinchTimesRef = React.useRef<number[]>([])
 
   /* ---- main loop -------------------------------------------------- */
   React.useEffect(() => {
@@ -547,40 +566,151 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
   React.useEffect(() => {
     if (!enabled) return
 
+    // Gesture tuning constants.
+    const FIST_ON = 0.16 // squeeze into a tight fist → orbit engages
+    const FIST_OFF = 0.26 // relax past this → orbit releases
+    const ZOOM_STEP = 0.07 // openness delta per zoom "notch"
+    const GRAB_MOVE = 0.03 // hand travel (normalized) that turns a pinch into a grab
+    const DOUBLE_PINCH_MS = 650 // two pinches within this window = "pinch twice"
+
+    /** The <canvas> under a screen point, if any (the 3D lab surface). */
+    const canvasAt = (px: number, py: number): Element | null => {
+      const el = document.elementFromPoint(px, py)
+      if (!el) return null
+      if (el instanceof HTMLCanvasElement) return el
+      return el.closest?.('canvas') ?? null
+    }
+
+    /** Click an empty canvas corner so R3F's onPointerMissed clears the selection. */
+    const clickEmptyToDeselect = (canvas: Element | null) => {
+      if (!canvas) return
+      const r = canvas.getBoundingClientRect()
+      const cx = r.left + 6
+      const cy = r.top + 6
+      dispatchPointer('pointerdown', cx, cy, 1, canvas)
+      dispatchPointer('pointerup', cx, cy, 0, canvas)
+      dispatchClick(cx, cy, canvas)
+    }
+
+    const endOrbit = () => {
+      if (!orbitActiveRef.current) return
+      const a = orbitPtrRef.current
+      dispatchPointer('pointerup', a.x, a.y, 0, orbitCanvasRef.current)
+      orbitActiveRef.current = false
+      setDown(false)
+    }
+
+    const dropGrab = (x: number, y: number, target: Element | null) => {
+      dispatchPointer('pointerup', x, y, 0, target)
+      clickEmptyToDeselect(canvasAt(x, y) ?? orbitCanvasRef.current)
+      grabbedRef.current = false
+      pinchTimesRef.current = []
+      setDown(false)
+      setFlash((f) => f + 1)
+    }
+
     const step = () => {
       const p = poseRef.current
+
+      // Hand lost: gracefully end any in-progress gesture so nothing sticks.
       if (!p || !p.visible) {
+        endOrbit()
+        const x = lastXRef.current
+        const y = lastYRef.current
+        if (grabbedRef.current) dropGrab(x, y, document.elementFromPoint(x, y))
+        if (pressActiveRef.current) {
+          dispatchPointer('pointerup', x, y, 0, document.elementFromPoint(x, y))
+          pressActiveRef.current = false
+          setDown(false)
+        }
         lastScrollYRef.current = null
+        lastOpennessRef.current = null
+        prevPinchRef.current = false
+        fistOnRef.current = false
         return
       }
+
       const x = p.x * window.innerWidth
       const y = p.y * window.innerHeight
-
+      lastXRef.current = x
+      lastYRef.current = y
       const hovering = document.elementFromPoint(x, y)
-      dispatchPointer('pointermove', x, y, downTargetRef.current ? 1 : 0, hovering)
 
-      // open / close hand to zoom — only while not pinching/scrolling/dragging so
-      // it never fights the cursor, click or scroll gestures.
-      if (!p.pinch && !p.scroll && !downTargetRef.current) {
+      // Fist detection with hysteresis.
+      const fistOn = fistOnRef.current ? p.openness < FIST_OFF : p.openness < FIST_ON
+      fistOnRef.current = fistOn
+
+      // Pinch rising / falling edges (pose.pinch is already hysteresis-debounced).
+      const pinchRise = p.pinch && !prevPinchRef.current
+      const pinchFall = !p.pinch && prevPinchRef.current
+      prevPinchRef.current = p.pinch
+
+      /* ---------- ORBIT: tight fist rotates the 3D view --------------- */
+      // Exclusive gesture; never runs while grabbing, pressing or pinching.
+      if (fistOn && !grabbedRef.current && !pressActiveRef.current && !p.pinch) {
+        const canvas = canvasAt(x, y) ?? document.querySelector('canvas')
+        if (!orbitActiveRef.current) {
+          // Anchor the drag at a safe, empty-ish spot on the board so the first
+          // pointerdown drives OrbitControls instead of grabbing a component.
+          const r = (canvas as Element | null)?.getBoundingClientRect()
+          const ax = r ? r.left + r.width * 0.14 : x
+          const ay = r ? r.top + r.height * 0.16 : y
+          orbitPtrRef.current = { x: ax, y: ay }
+          orbitOriginRef.current = { nx: p.x, ny: p.y }
+          orbitCanvasRef.current = canvas
+          dispatchPointer('pointerdown', ax, ay, 1, canvas)
+          orbitActiveRef.current = true
+          setDown(true)
+        } else {
+          // Translate hand travel into pointer travel around the anchor so the
+          // view rotates as the fist moves.
+          const a = orbitPtrRef.current
+          const o = orbitOriginRef.current
+          const px = a.x + (p.x - o.nx) * window.innerWidth
+          const py = a.y + (p.y - o.ny) * window.innerHeight
+          dispatchPointer('pointermove', px, py, 1, orbitCanvasRef.current)
+        }
+        lastScrollYRef.current = null
+        lastOpennessRef.current = null
+        zoomAccumRef.current = 0
+        return
+      }
+      endOrbit()
+
+      // Baseline hover / drag move. Button reflects an active grab or press so a
+      // latched component keeps following the hand.
+      const buttons = grabbedRef.current || pressActiveRef.current ? 1 : 0
+      dispatchPointer('pointermove', x, y, buttons, hovering)
+
+      /* ---------- GRABBED: component follows hand until double-pinch --- */
+      if (grabbedRef.current) {
+        if (pinchRise) {
+          const now = performance.now()
+          pinchTimesRef.current = [...pinchTimesRef.current, now].filter(
+            (t) => now - t < DOUBLE_PINCH_MS,
+          )
+          // "Pinch twice" to release and deselect.
+          if (pinchTimesRef.current.length >= 2) dropGrab(x, y, hovering)
+        }
+        return
+      }
+
+      /* ---------- ZOOM: open / close the hand (not a tight fist) ------- */
+      if (!p.pinch && !p.scroll && !pressActiveRef.current) {
         const prev = lastOpennessRef.current
         if (prev !== null) {
           const d = p.openness - prev
-          // Ignore tiny frame-to-frame noise; only deliberate opening/closing counts.
           if (Math.abs(d) > 0.012) zoomAccumRef.current += d
         }
         lastOpennessRef.current = p.openness
-
-        // Each accumulated chunk of openness fires one wheel notch, giving a
-        // smooth, controllable zoom as the hand opens (in) or closes (out).
-        const STEP = 0.07
         let ticks = 0
-        while (zoomAccumRef.current > STEP && ticks < 4) {
-          zoomAccumRef.current -= STEP
+        while (zoomAccumRef.current > ZOOM_STEP && ticks < 4) {
+          zoomAccumRef.current -= ZOOM_STEP
           ticks += 1
           dispatchWheel(x, y, -100, zoomTargetAt(x, y)) // opening → zoom in
         }
-        while (zoomAccumRef.current < -STEP && ticks < 4) {
-          zoomAccumRef.current += STEP
+        while (zoomAccumRef.current < -ZOOM_STEP && ticks < 4) {
+          zoomAccumRef.current += ZOOM_STEP
           ticks += 1
           dispatchWheel(x, y, 100, zoomTargetAt(x, y)) // closing → zoom out
         }
@@ -589,7 +719,7 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
         zoomAccumRef.current = 0
       }
 
-      // two-finger scroll: vertical hand movement scrolls the hovered container
+      /* ---------- SCROLL: index + middle up, move vertically ---------- */
       if (p.scroll) {
         if (lastScrollYRef.current !== null) {
           const delta = (lastScrollYRef.current - p.y) * window.innerHeight * 0.9
@@ -603,20 +733,36 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
         lastScrollYRef.current = null
       }
 
-      // pinch click / drag
-      if (p.pinch && !downTargetRef.current) {
-        downTargetRef.current = hovering
+      /* ---------- PINCH: click, pin-connect, or latch into a grab ----- */
+      if (pinchRise && !pressActiveRef.current) {
+        pressActiveRef.current = true
+        pressMovedRef.current = false
+        pressStartPosRef.current = { x, y }
+        pressTargetRef.current = hovering
         dispatchPointer('pointerdown', x, y, 1, hovering)
         setDown(true)
-      } else if (!p.pinch && downTargetRef.current) {
-        const target = downTargetRef.current
-        downTargetRef.current = null
-        dispatchPointer('pointerup', x, y, 0, hovering)
-        dispatchClick(x, y, target)
-        setDown(false)
-        setFlash((f) => f + 1)
-      } else if (p.pinch && downTargetRef.current) {
-        dispatchPointer('pointermove', x, y, 1, hovering)
+      } else if (pinchFall && pressActiveRef.current) {
+        const onCanvas = !!canvasAt(x, y)
+        if (pressMovedRef.current && onCanvas) {
+          // Pinched a component and moved it → latch. It now follows the hand
+          // (pinch can relax) until a double-pinch drops it. Camera stays locked.
+          grabbedRef.current = true
+          pressActiveRef.current = false
+          pinchTimesRef.current = []
+        } else {
+          // A tap: click / connect a pin / press a button.
+          dispatchPointer('pointerup', x, y, 0, hovering)
+          dispatchClick(x, y, pressTargetRef.current)
+          pressActiveRef.current = false
+          setDown(false)
+          setFlash((f) => f + 1)
+        }
+      } else if (p.pinch && pressActiveRef.current) {
+        // Holding: track travel so we know whether this becomes a grab.
+        const sp = pressStartPosRef.current
+        if (Math.hypot(p.x - sp.x / window.innerWidth, p.y - sp.y / window.innerHeight) > GRAB_MOVE) {
+          pressMovedRef.current = true
+        }
       }
     }
 
@@ -641,6 +787,37 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
   }, [])
 
   const value = React.useMemo(() => ({ enabled, setEnabled: toggle }), [enabled, toggle])
+
+  /* ---- draggable camera feed (starts bottom-left) ----------------- */
+  const pipRef = React.useRef<HTMLDivElement>(null)
+  const [pipPos, setPipPos] = React.useState<{ left: number; top: number } | null>(null)
+
+  const startPipDrag = React.useCallback((e: React.PointerEvent) => {
+    // Don't start a drag when the pointer is on the dismiss button.
+    if ((e.target as Element).closest('button')) return
+    const el = pipRef.current
+    if (!el) return
+    e.preventDefault()
+    const rect = el.getBoundingClientRect()
+    const offX = e.clientX - rect.left
+    const offY = e.clientY - rect.top
+    const move = (ev: PointerEvent) => {
+      const left = clamp(ev.clientX - offX, 4, window.innerWidth - rect.width - 4)
+      const top = clamp(ev.clientY - offY, 4, window.innerHeight - rect.height - 4)
+      setPipPos({ left, top })
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }, [])
+
+  // When positioned by dragging, override the default bottom-left anchor.
+  const pipStyle = pipPos
+    ? { left: pipPos.left, top: pipPos.top, right: 'auto' as const, bottom: 'auto' as const }
+    : undefined
 
   return (
     <HandControlContext.Provider value={value}>
