@@ -21,6 +21,7 @@ import {
   type Difficulty,
   type ShapeKind,
 } from '@/lib/electronics-data'
+import { SIGNAL, GLOW, COPPER, MONO_STACK, EASE_ELECTRIC } from '@/lib/theme'
 
 /* ------------------------------------------------------------------ */
 /* Lazy / dynamic imports (client-only WebGL)                          */
@@ -94,15 +95,16 @@ function CardThumb({
       style={{
         width: 76,
         height: 76,
-        borderRadius: 10,
+        borderRadius: 6,
         overflow: 'hidden',
-        backgroundColor: '#2b3a52',
-        border: '1px solid rgba(255, 255, 255, 0.12)',
+        // Dark chip socket seated on the board.
+        backgroundColor: '#0e1013',
+        border: `1px solid ${hovered ? SIGNAL.red : 'rgba(255,70,58,0.18)'}`,
         flexShrink: 0,
         transition: 'box-shadow 200ms ease, border-color 200ms ease',
         boxShadow: hovered
-          ? `0 0 0 2px ${tokens.colorBrandBackground}, 0 4px 12px rgba(0, 0, 0, 0.3)`
-          : 'inset 0 1px 2px rgba(255, 255, 255, 0.08), 0 2px 6px rgba(0, 0, 0, 0.2)',
+          ? `${GLOW.md}, inset 0 1px 2px rgba(255,255,255,0.04)`
+          : 'inset 0 1px 2px rgba(255,255,255,0.04), 0 2px 6px rgba(0,0,0,0.35)',
       }}
     >
       {mounted && <CardThumb3D shape={shape} color={color} hovered={hovered} />}
@@ -145,8 +147,10 @@ const useStyles = makeStyles({
   },
 
   chip: {
-    borderRadius: tokens.borderRadiusCircular,
+    borderRadius: '4px',
     cursor: 'pointer',
+    fontFamily: MONO_STACK,
+    letterSpacing: '0.06em',
   },
 
   grid: {
@@ -155,23 +159,48 @@ const useStyles = makeStyles({
     gap: tokens.spacingHorizontalL,
   },
 
+  // Component tile styled as a labeled chip on the board.
   card: {
+    position: 'relative',
     display: 'flex',
     flexDirection: 'column',
     gap: tokens.spacingVerticalM,
     padding: tokens.spacingHorizontalL,
-    borderRadius: tokens.borderRadiusXLarge,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: '6px',
+    border: `1px solid rgba(255,70,58,0.16)`,
     backgroundColor: tokens.colorNeutralBackground1,
     cursor: 'pointer',
     textAlign: 'left',
+    overflow: 'hidden',
     transform: 'translateY(0)',
     transitionDuration: tokens.durationNormal,
     transitionProperty: 'transform, border-color, box-shadow',
+    transitionTimingFunction: EASE_ELECTRIC,
+    // Copper trace running along the chip's top edge.
+    '::before': {
+      content: '""',
+      position: 'absolute',
+      top: 0,
+      left: '12px',
+      right: '12px',
+      height: '2px',
+      background: `linear-gradient(90deg, transparent, ${COPPER.idle} 20%, ${COPPER.idle} 80%, transparent)`,
+      opacity: 0.6,
+      transitionProperty: 'opacity, background',
+      transitionDuration: tokens.durationNormal,
+    },
     ':hover': {
       transform: 'translateY(-3px)',
-      border: `1px solid ${tokens.colorBrandStroke1}`,
-      boxShadow: tokens.shadow16,
+      borderTopColor: SIGNAL.red,
+      borderRightColor: SIGNAL.red,
+      borderBottomColor: SIGNAL.red,
+      borderLeftColor: SIGNAL.red,
+      boxShadow: GLOW.md,
+    },
+    // Top trace energizes to signal-red on hover.
+    ':hover::before': {
+      opacity: 1,
+      background: `linear-gradient(90deg, transparent, ${SIGNAL.red} 20%, ${SIGNAL.hot} 50%, ${SIGNAL.red} 80%, transparent)`,
     },
   },
 
@@ -286,7 +315,17 @@ export function ComponentLibrary() {
                 {/* Name, category, tagline */}
                 <div className={styles.cardInfo}>
                   <Subtitle2>{c.name}</Subtitle2>
-                  <Caption1 className={styles.tagline}>{c.category}</Caption1>
+                  <Caption1
+                    className={styles.tagline}
+                    style={{
+                      fontFamily: MONO_STACK,
+                      letterSpacing: '0.1em',
+                      textTransform: 'uppercase',
+                      color: SIGNAL.hot,
+                    }}
+                  >
+                    {c.category}
+                  </Caption1>
                   <Body1 className={styles.tagline}>{c.tagline}</Body1>
                 </div>
 

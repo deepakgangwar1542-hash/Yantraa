@@ -11,6 +11,7 @@ import {
   FINGERTIPS,
   type HandPose,
 } from '@/lib/hand-tracking'
+import { STATUS, MONO_STACK, PCB } from '@/lib/theme'
 
 /* ------------------------------------------------------------------ */
 /* Context                                                            */
@@ -280,9 +281,9 @@ const useStyles = makeStyles({
     zIndex: 9002,
     pointerEvents: 'auto',
     width: '220px',
-    borderRadius: tokens.borderRadiusLarge,
+    borderRadius: '6px',
     overflow: 'hidden',
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    border: `1px solid ${PCB.strokeRed}`,
     backgroundColor: tokens.colorNeutralBackground1,
     boxShadow: tokens.shadow16,
   },
@@ -331,12 +332,42 @@ const useStyles = makeStyles({
     pointerEvents: 'none',
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
+    gap: '10px',
     padding: '6px 14px',
-    borderRadius: tokens.borderRadiusCircular,
-    backgroundColor: tokens.colorNeutralBackground1,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: '5px',
+    backgroundColor: 'rgba(18,20,23,0.94)',
+    border: `1px solid ${PCB.strokeRed}`,
     boxShadow: tokens.shadow8,
+    fontFamily: MONO_STACK,
+  },
+  // Small tracking LED: green live, amber searching, red fault.
+  trackLed: {
+    width: '8px',
+    height: '8px',
+    borderRadius: '50%',
+    flexShrink: 0,
+  },
+  trackLive: {
+    backgroundColor: STATUS.active,
+    boxShadow: `0 0 8px 1px ${STATUS.active}`,
+  },
+  trackSearch: {
+    backgroundColor: STATUS.warning,
+    animationName: 'led-blink',
+    animationDuration: '1s',
+    animationIterationCount: 'infinite',
+    animationTimingFunction: 'steps(1,end)',
+    '@media (prefers-reduced-motion: reduce)': {
+      animationName: 'none',
+    },
+  },
+  trackLabel: {
+    fontFamily: MONO_STACK,
+    fontSize: '11px',
+    fontWeight: 600,
+    letterSpacing: '0.12em',
+    textTransform: 'uppercase',
+    color: tokens.colorNeutralForeground2,
   },
   clickFlash: {
     position: 'absolute',
@@ -628,15 +659,33 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
 
       {enabled && status !== 'error' && (
         <div className={styles.statusPill}>
-          {status === 'loading' && <Spinner size="tiny" />}
-          <Text size={200}>
+          {status === 'loading' || status === 'camera' ? (
+            <Spinner size="tiny" />
+          ) : (
+            <span
+              className={`${styles.trackLed} ${
+                pose?.visible ? styles.trackLive : styles.trackSearch
+              }`}
+              aria-hidden
+            />
+          )}
+          <span className={styles.trackLabel}>
             {status === 'loading'
-              ? 'Loading hand-tracking model…'
+              ? 'INIT MODEL'
               : status === 'camera'
-                ? 'Starting camera…'
+                ? 'CAMERA'
                 : pose?.visible
-                  ? 'Pinch to select · open / close hand to zoom · two fingers to scroll'
-                  : 'Show your hand to the camera'}
+                  ? 'TRACKING'
+                  : 'SEARCHING'}
+          </span>
+          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+            {status === 'ready'
+              ? pose?.visible
+                ? 'Pinch to select · open / close to zoom · two fingers to scroll'
+                : 'Show your hand to the camera'
+              : status === 'loading'
+                ? 'Loading hand-tracking model…'
+                : 'Starting camera…'}
           </Text>
         </div>
       )}
@@ -684,9 +733,20 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
             />
           </div>
           <div className={styles.pipBar}>
-            <HandRight24Regular />
-            <Text size={200} style={{ flexGrow: 1 }}>
-              Hand control
+            <span
+              className={`${styles.trackLed} ${pose?.visible ? styles.trackLive : styles.trackSearch}`}
+              aria-hidden
+            />
+            <Text
+              size={200}
+              style={{
+                flexGrow: 1,
+                fontFamily: MONO_STACK,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Hand tracking
             </Text>
             <Tooltip content="Turn off hand control" relationship="label">
               <Button
@@ -716,8 +776,16 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
         <div className={styles.pip}>
           <div className={styles.pipBar}>
             <HandRight24Regular />
-            <Text size={200} style={{ flexGrow: 1, color: '#ff7a7a' }}>
-              Hand control unavailable
+            <Text
+              size={200}
+              style={{
+                flexGrow: 1,
+                color: STATUS.error,
+                fontFamily: MONO_STACK,
+                letterSpacing: '0.08em',
+              }}
+            >
+              FAULT · UNAVAILABLE
             </Text>
             <Tooltip content="Dismiss" relationship="label">
               <Button

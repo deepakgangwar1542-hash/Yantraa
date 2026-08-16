@@ -12,7 +12,6 @@ import {
   Title2,
   Body1,
   Caption1,
-  Spinner,
   Avatar,
   MessageBar,
   MessageBarBody,
@@ -73,14 +72,26 @@ const useStyles = makeStyles({
     paddingTop: tokens.spacingVerticalXXL,
     paddingBottom: tokens.spacingVerticalL,
   },
+  // IC-chip brand mark: dark package, signal-red die, breathing glow + pin rails.
   heroMark: {
+    position: 'relative',
     display: 'grid',
     placeItems: 'center',
     width: '64px',
     height: '64px',
-    borderRadius: tokens.borderRadiusXLarge,
-    color: tokens.colorNeutralForegroundOnBrand,
-    background: `linear-gradient(135deg, #FF3B54, ${tokens.colorBrandBackground} 55%, #7A011C)`,
+    borderRadius: '8px',
+    color: '#fff',
+    border: `1px solid ${SIGNAL.red}`,
+    backgroundColor: '#141416',
+    backgroundImage: `radial-gradient(circle at 50% 45%, rgba(255,45,45,0.55), rgba(255,45,45,0.08) 60%, transparent 72%)`,
+    boxShadow: GLOW.md,
+    animationName: 'trace-pulse',
+    animationDuration: '3.6s',
+    animationIterationCount: 'infinite',
+    animationTimingFunction: 'ease-in-out',
+    '@media (prefers-reduced-motion: reduce)': {
+      animationName: 'none',
+    },
   },
   suggestions: {
     display: 'grid',
@@ -108,8 +119,42 @@ const useStyles = makeStyles({
     transitionProperty: 'background-color, border-color, transform',
     ':hover': {
       backgroundColor: tokens.colorNeutralBackground1Hover,
-      border: `1px solid ${tokens.colorBrandStroke1}`,
+      borderTopColor: SIGNAL.red,
+      borderRightColor: SIGNAL.red,
+      borderBottomColor: SIGNAL.red,
+      borderLeftColor: SIGNAL.red,
       transform: 'translateY(-2px)',
+    },
+  },
+  // "Current flowing" thinking indicator — dots pulse along a trace.
+  thinking: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    height: '20px',
+    fontFamily: MONO_STACK,
+    fontSize: '11px',
+    letterSpacing: '0.12em',
+    textTransform: 'uppercase',
+    color: tokens.colorNeutralForeground3,
+  },
+  thinkingDots: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '5px',
+  },
+  thinkingDot: {
+    width: '7px',
+    height: '7px',
+    borderRadius: '50%',
+    backgroundColor: SIGNAL.red,
+    animationName: 'trace-pulse',
+    animationDuration: '1.1s',
+    animationIterationCount: 'infinite',
+    animationTimingFunction: EASE_ELECTRIC,
+    '@media (prefers-reduced-motion: reduce)': {
+      animationName: 'none',
+      opacity: 0.7,
     },
   },
   row: {
@@ -128,25 +173,32 @@ const useStyles = makeStyles({
     borderRadius: tokens.borderRadiusXLarge,
     maxWidth: '100%',
   },
+  // Student message: energized signal-red with a soft current glow.
   bubbleUser: {
-    backgroundColor: tokens.colorBrandBackground,
-    color: tokens.colorNeutralForegroundOnBrand,
+    backgroundColor: SIGNAL.red,
+    color: '#fff',
     borderBottomRightRadius: tokens.borderRadiusSmall,
+    boxShadow: GLOW.sm,
   },
+  // Tutor message: matte PCB panel with a faint red-tinted trace border.
   bubbleAssistant: {
     backgroundColor: tokens.colorNeutralBackground1,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    border: `1px solid rgba(255,70,58,0.16)`,
     borderBottomLeftRadius: tokens.borderRadiusSmall,
   },
+  // Tutor avatar as a small IC chip.
   botAvatar: {
     display: 'grid',
     placeItems: 'center',
     flexShrink: 0,
     width: '32px',
     height: '32px',
-    borderRadius: tokens.borderRadiusCircular,
-    color: tokens.colorNeutralForegroundOnBrand,
-    background: `linear-gradient(135deg, #FF3B54, ${tokens.colorBrandBackground} 55%, #7A011C)`,
+    borderRadius: '6px',
+    color: '#fff',
+    border: `1px solid ${SIGNAL.red}`,
+    backgroundColor: '#141416',
+    backgroundImage: `radial-gradient(circle at 50% 45%, rgba(255,45,45,0.5), transparent 72%)`,
+    boxShadow: GLOW.sm,
   },
   composer: {
     borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
@@ -194,6 +246,24 @@ const useStyles = makeStyles({
     marginTop: tokens.spacingVerticalXS,
   },
 })
+
+/** Branded "thinking" readout: three dots pulsing like current on a trace. */
+function TraceThinking({ className, dotClassName, dotsClassName }: {
+  className: string
+  dotsClassName: string
+  dotClassName: string
+}) {
+  return (
+    <span className={className} role="status" aria-label="Circuit is thinking">
+      <span aria-hidden>Analyzing</span>
+      <span className={dotsClassName} aria-hidden>
+        <span className={dotClassName} style={{ animationDelay: '0ms' }} />
+        <span className={dotClassName} style={{ animationDelay: '160ms' }} />
+        <span className={dotClassName} style={{ animationDelay: '320ms' }} />
+      </span>
+    </span>
+  )
+}
 
 export function InstructorChat() {
   const styles = useStyles()
@@ -321,7 +391,11 @@ export function InstructorChat() {
                       text ? (
                         <ChatMarkdown text={text} />
                       ) : (
-                        <Spinner size="tiny" label={'Thinking\u2026'} />
+                        <TraceThinking
+                          className={styles.thinking}
+                          dotsClassName={styles.thinkingDots}
+                          dotClassName={styles.thinkingDot}
+                        />
                       )
                     )}
                   </div>
@@ -335,7 +409,11 @@ export function InstructorChat() {
                 <BrainCircuit24Filled fontSize={18} />
               </span>
               <div className={`${styles.bubble} ${styles.bubbleAssistant}`}>
-                <Spinner size="tiny" label={'Thinking\u2026'} />
+                <TraceThinking
+                  className={styles.thinking}
+                  dotsClassName={styles.thinkingDots}
+                  dotClassName={styles.thinkingDot}
+                />
               </div>
             </div>
           )}
@@ -343,7 +421,11 @@ export function InstructorChat() {
           {error && !busy && (
             <MessageBar intent="error" layout="multiline">
               <MessageBarBody>
-                <MessageBarTitle>Circuit could not respond</MessageBarTitle>
+                <MessageBarTitle
+                  style={{ fontFamily: MONO_STACK, letterSpacing: '0.08em' }}
+                >
+                  ERR · NO RESPONSE
+                </MessageBarTitle>
                 {error.message || 'Something went wrong contacting the tutor. Please try again.'}
               </MessageBarBody>
               <MessageBarActions>
