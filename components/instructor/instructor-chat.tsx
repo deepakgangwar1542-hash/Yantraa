@@ -73,7 +73,7 @@ const useStyles = makeStyles({
     height: '64px',
     borderRadius: tokens.borderRadiusXLarge,
     color: tokens.colorNeutralForegroundOnBrand,
-    background: `linear-gradient(135deg, ${tokens.colorBrandBackground}, ${tokens.colorPaletteTealBackground2})`,
+    background: `linear-gradient(135deg, #FF3B54, ${tokens.colorBrandBackground} 55%, #7A011C)`,
   },
   suggestions: {
     display: 'grid',
@@ -139,7 +139,7 @@ const useStyles = makeStyles({
     height: '32px',
     borderRadius: tokens.borderRadiusCircular,
     color: tokens.colorNeutralForegroundOnBrand,
-    background: `linear-gradient(135deg, ${tokens.colorBrandBackground}, ${tokens.colorPaletteTealBackground2})`,
+    background: `linear-gradient(135deg, #FF3B54, ${tokens.colorBrandBackground} 55%, #7A011C)`,
   },
   composer: {
     borderTop: `1px solid ${tokens.colorNeutralStroke2}`,

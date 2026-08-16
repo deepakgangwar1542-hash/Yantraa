@@ -508,7 +508,7 @@ export function SpatialLab() {
                 <span className={styles.itemName}>{c.name}</span>
                 <Caption1 style={{ color: '#8496b5' }}>{c.category}</Caption1>
               </span>
-              <Add20Regular style={{ color: '#4ea1ff', flexShrink: 0 }} />
+              <Add20Regular style={{ color: tokens.colorBrandForeground1, flexShrink: 0 }} />
             </button>
           ))}
         </div>

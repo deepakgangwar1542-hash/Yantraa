@@ -148,7 +148,7 @@ function drawSkeleton(
 
   // Bones
   ctx.lineWidth = 3
-  ctx.strokeStyle = 'rgba(78, 161, 255, 0.85)'
+  ctx.strokeStyle = 'rgba(224, 17, 44, 0.85)'
   ctx.lineCap = 'round'
   for (const [a, b] of HAND_CONNECTIONS) {
     const p = landmarks[a]
@@ -260,7 +260,7 @@ const useStyles = makeStyles({
     top: '50%',
     transform: 'translate(-50%, -50%)',
     borderRadius: '50%',
-    border: '2px solid rgba(78, 161, 255, 0.95)',
+    border: '2px solid rgba(224, 17, 44, 0.95)',
     boxShadow: '0 0 0 9999px rgba(0,0,0,0)',
   },
   cursorDot: {
@@ -269,7 +269,7 @@ const useStyles = makeStyles({
     top: '50%',
     transform: 'translate(-50%, -50%)',
     borderRadius: '50%',
-    backgroundColor: '#4ea1ff',
+    backgroundColor: '#E0112C',
     border: '2px solid #ffffff',
     boxShadow: '0 1px 4px rgba(0,0,0,0.5)',
   },

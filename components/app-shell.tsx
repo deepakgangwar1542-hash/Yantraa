@@ -213,7 +213,7 @@ const useStyles = makeStyles({
     pointerEvents: 'none',
   },
   bgFallback: {
-    background: `radial-gradient(1200px 600px at 20% 15%, ${tokens.colorBrandBackground2} 0%, transparent 55%), radial-gradient(900px 500px at 85% 80%, ${tokens.colorPaletteTealBackground2} 0%, transparent 55%)`,
+    background: `radial-gradient(1200px 600px at 20% 15%, ${tokens.colorBrandBackground2} 0%, transparent 55%), radial-gradient(900px 500px at 85% 80%, rgba(122,1,28,0.55) 0%, transparent 55%)`,
     opacity: 0.35,
   },
   // Lab is kept mounted at a stable size; we toggle visibility, never display,
@@ -260,7 +260,7 @@ const useStyles = makeStyles({
     paddingTop: tokens.spacingVerticalXXS,
     paddingBottom: tokens.spacingVerticalXXS,
     borderRadius: tokens.borderRadiusCircular,
-    backgroundColor: tokens.colorPaletteTealBackground2,
+    backgroundColor: tokens.colorBrandBackground,
     color: tokens.colorNeutralForegroundOnBrand,
   },
   badgeSparkle: {
