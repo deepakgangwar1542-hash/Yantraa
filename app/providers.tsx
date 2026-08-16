@@ -17,49 +17,50 @@ import { useServerInsertedHTML } from 'next/navigation'
 type ThemeMode = 'light' | 'dark'
 
 /* ------------------------------------------------------------------ */
-/* YANTRAA brand — "Red & Carbon"                                      */
+/* YANTRAA brand — "a powered PCB on a dark lab bench"                  */
 /* ------------------------------------------------------------------ */
 /*
- * Signature red: #E0112C (slot 90). The full ramp is derived from it —
- * deep oxblood shades below for surfaces/text-on-red, vivid reds in the
- * mid for accents/glows, soft pinks above for dark-theme foregrounds.
- * Fluent maps this ramp into both light and dark themes automatically.
+ * Signal red: #ff2d2d (slot 100) — means "live / active / current flowing".
+ * The ramp runs from deep oxblood (surfaces / text-on-red) up through the
+ * signal red core to a hot highlight (#ff5c4d, slot 120) and soft pinks for
+ * dark-theme foregrounds. Fluent maps this into both themes; key brand tokens
+ * are then pinned explicitly below so the "live" red is exact and predictable.
  */
-export const YANTRAA_RED = '#E0112C'
+export const YANTRAA_RED = '#ff2d2d'
 
 const brandRed: BrandVariants = {
   10: '#060000',
-  20: '#250207',
-  30: '#41040D',
-  40: '#5A0511',
-  50: '#750516',
-  60: '#91041C',
-  70: '#AE0521',
-  80: '#CB0827',
-  90: '#E0112C',
-  100: '#E7324A',
-  110: '#EE5063',
-  120: '#F36F7E',
-  130: '#F78E99',
-  140: '#FAADB4',
-  150: '#FCCBCF',
-  160: '#FEE8EA',
+  20: '#2a0304',
+  30: '#470507',
+  40: '#61060a',
+  50: '#7a1210', // cooled trace — inactive / disabled brand
+  60: '#99060f',
+  70: '#b80712',
+  80: '#d50e1c',
+  90: '#f01f26',
+  100: '#ff2d2d', // core signal red
+  110: '#ff4438',
+  120: '#ff5c4d', // hot highlight — hover / peak glow
+  130: '#ff7a6b',
+  140: '#ff9d91',
+  150: '#ffc3bb',
+  160: '#ffe7e3',
 }
 
-/* Carbon neutral scale used to override Fluent's default grays in dark mode. */
+/* PCB substrate: near-black, faintly warm — never neutral gray. */
 const carbon = {
-  page: '#0B0B0D',
-  surface: '#131318',
-  surfaceHover: '#1A1A20',
-  elevated: '#1B1B21',
-  elevatedHover: '#232329',
-  stroke1: 'rgba(255,255,255,0.14)',
-  stroke2: 'rgba(255,255,255,0.08)',
-  strokeAccessible: 'rgba(255,255,255,0.28)',
-  text1: '#FFFFFF',
-  text2: '#B9B9C2',
-  text3: '#7A7A85',
-  text4: '#5A5A63',
+  page: '#0b0d0f', // base canvas
+  surface: '#121417', // panel level 1
+  surfaceHover: '#191b1f', // panel level 2 / raised
+  elevated: '#191b1f',
+  elevatedHover: '#20232a',
+  stroke1: 'rgba(255,70,58,0.16)', // faintly luminous red-tinted hairline
+  stroke2: 'rgba(255,255,255,0.07)',
+  strokeAccessible: 'rgba(255,120,110,0.34)',
+  text1: '#F4F5F7',
+  text2: '#AEB2BA',
+  text3: '#767B85',
+  text4: '#555A63',
 }
 
 const baseLight = createLightTheme(brandRed)
@@ -74,8 +75,14 @@ export const yantraaLightTheme: Theme = {
   colorNeutralForeground2: '#3A3A40',
   colorNeutralForeground3: '#5A5A66',
   // Keep the brand foreground a readable deep red on light surfaces.
-  colorBrandForeground1: '#B30E24',
-  colorBrandForeground2: '#9A0D1F',
+  colorBrandForeground1: '#cc1414',
+  colorBrandForeground2: '#a81010',
+  colorBrandBackground: '#e01414',
+  colorBrandBackgroundHover: '#ff2d2d',
+  fontFamilyBase:
+    "var(--font-sans), 'Inter', 'IBM Plex Sans', system-ui, -apple-system, sans-serif",
+  fontFamilyMonospace:
+    "var(--font-mono), 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace",
 }
 
 export const yantraaDarkTheme: Theme = {
@@ -102,9 +109,32 @@ export const yantraaDarkTheme: Theme = {
   colorNeutralForeground2: carbon.text2,
   colorNeutralForeground3: carbon.text3,
   colorNeutralForeground4: carbon.text4,
-  // Brand foreground reads as a bright red on carbon
-  colorBrandForeground1: '#F0637A',
-  colorBrandForeground2: '#F78E99',
+  // Brand surfaces pinned to the exact signal red so "live" is precise.
+  colorBrandBackground: '#ff2d2d',
+  colorBrandBackgroundHover: '#ff5c4d',
+  colorBrandBackgroundPressed: '#d50e1c',
+  colorBrandBackgroundSelected: '#ff2d2d',
+  colorCompoundBrandBackground: '#ff2d2d',
+  colorCompoundBrandBackgroundHover: '#ff5c4d',
+  colorCompoundBrandBackgroundPressed: '#d50e1c',
+  colorBrandStroke1: '#ff2d2d',
+  colorBrandStroke2: '#7a1210',
+  colorCompoundBrandStroke: '#ff4438',
+  colorCompoundBrandStrokeHover: '#ff5c4d',
+  // Brand foreground reads as a bright signal red on carbon.
+  colorBrandForeground1: '#ff5c4d',
+  colorBrandForeground2: '#ff7a6b',
+  colorBrandForegroundLink: '#ff6f60',
+  colorBrandForegroundLinkHover: '#ff8a7d',
+  // Instrument typography: Inter for UI, JetBrains Mono for readouts.
+  fontFamilyBase:
+    "var(--font-sans), 'Inter', 'IBM Plex Sans', system-ui, -apple-system, sans-serif",
+  fontFamilyMonospace:
+    "var(--font-mono), 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace",
+  // Crisp instrument corners — never the soft "friendly app" radius.
+  borderRadiusMedium: '4px',
+  borderRadiusLarge: '5px',
+  borderRadiusXLarge: '6px',
 }
 
 const ThemeModeContext = React.createContext<{

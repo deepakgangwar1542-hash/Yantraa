@@ -7,7 +7,6 @@ import {
   tokens,
   Text,
   Title3,
-  Caption1,
   Button,
   Tooltip,
 } from '@fluentui/react-components'
@@ -33,6 +32,7 @@ import {
   HandRight24Regular,
   HandRight24Filled,
 } from '@fluentui/react-icons'
+import { GLOW, SIGNAL, COPPER, STATUS, MONO_STACK, EASE_ELECTRIC } from '@/lib/theme'
 
 type ViewId = 'instructor' | 'library' | 'lab'
 
@@ -76,6 +76,7 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground1,
   },
   rail: {
+    position: 'relative',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'stretch',
@@ -84,14 +85,16 @@ const useStyles = makeStyles({
     paddingTop: tokens.spacingVerticalL,
     paddingBottom: tokens.spacingVerticalL,
     gap: tokens.spacingVerticalS,
-    borderRight: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRight: `1px solid ${tokens.colorNeutralStroke1}`,
     backgroundColor: tokens.colorNeutralBackground1,
+    // faint solder-mask sheen down the connector edge
+    backgroundImage: `linear-gradient(180deg, rgba(255,45,45,0.05), transparent 22%)`,
   },
   brand: {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    gap: tokens.spacingVerticalXXS,
+    gap: tokens.spacingVerticalXS,
     paddingBottom: tokens.spacingVerticalL,
     marginBottom: tokens.spacingVerticalXS,
     borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
@@ -101,72 +104,112 @@ const useStyles = makeStyles({
     placeItems: 'center',
     width: '40px',
     height: '40px',
-    borderRadius: tokens.borderRadiusLarge,
-    color: tokens.colorNeutralForegroundOnBrand,
-    background: `linear-gradient(135deg, #FF3B54, ${tokens.colorBrandBackground} 55%, #7A011C)`,
-    animationName: {
-      '0%, 100%': {
-        boxShadow: `0 0 0 0 ${tokens.colorBrandBackground2}`,
-      },
-      '50%': {
-        boxShadow: `0 0 16px 2px ${tokens.colorBrandBackground2}`,
-      },
-    },
-    animationDuration: '3.2s',
+    borderRadius: '5px',
+    color: '#fff',
+    border: `1px solid ${SIGNAL.hot}`,
+    background: `linear-gradient(135deg, ${SIGNAL.hot}, ${SIGNAL.red} 55%, ${SIGNAL.cool})`,
+    animationName: 'trace-pulse',
+    animationDuration: '3.4s',
     animationIterationCount: 'infinite',
     animationTimingFunction: 'ease-in-out',
     '@media (prefers-reduced-motion: reduce)': {
       animationName: 'none',
+      boxShadow: GLOW.sm,
     },
   },
+  brandWord: {
+    fontFamily: MONO_STACK,
+    fontSize: '9px',
+    fontWeight: 700,
+    letterSpacing: '0.18em',
+    color: tokens.colorNeutralForeground2,
+  },
   navList: {
+    position: 'relative',
     display: 'flex',
     flexDirection: 'column',
-    gap: tokens.spacingVerticalXS,
+    gap: tokens.spacingVerticalM,
     paddingLeft: tokens.spacingHorizontalS,
     paddingRight: tokens.spacingHorizontalS,
+    paddingTop: tokens.spacingVerticalS,
     flexGrow: 1,
   },
+  // The copper edge-connector trace running vertically behind the pads.
+  navTrace: {
+    position: 'absolute',
+    top: '10px',
+    bottom: '10px',
+    left: '50%',
+    width: '2px',
+    transform: 'translateX(-50%)',
+    background: `linear-gradient(180deg, transparent, ${COPPER.idle} 12%, ${COPPER.idle} 88%, transparent)`,
+    zIndex: 0,
+    pointerEvents: 'none',
+  },
   navItem: {
+    position: 'relative',
+    zIndex: 1,
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    gap: tokens.spacingVerticalXXS,
-    paddingTop: tokens.spacingVerticalS,
-    paddingBottom: tokens.spacingVerticalS,
-    borderRadius: tokens.borderRadiusMedium,
+    gap: tokens.spacingVerticalXS,
+    padding: 0,
     border: 'none',
     cursor: 'pointer',
     color: tokens.colorNeutralForeground3,
     backgroundColor: 'transparent',
-    transform: 'translateY(0) scale(1)',
     transitionDuration: tokens.durationNormal,
-    transitionProperty: 'background-color, color, transform',
-    transitionTimingFunction: 'cubic-bezier(0.2, 0.9, 0.3, 1.2)',
+    transitionProperty: 'color, transform',
+    transitionTimingFunction: EASE_ELECTRIC,
     ':hover': {
-      backgroundColor: tokens.colorNeutralBackground1Hover,
       color: tokens.colorNeutralForeground1,
-      transform: 'translateY(-2px) scale(1.04)',
-    },
-    ':active': {
-      transform: 'translateY(0) scale(0.97)',
     },
     '@media (prefers-reduced-motion: reduce)': {
       transform: 'none',
     },
   },
-  navItemActive: {
-    backgroundColor: tokens.colorBrandBackground2,
-    color: tokens.colorBrandForeground1,
-    ':hover': {
-      backgroundColor: tokens.colorBrandBackground2Hover,
-      color: tokens.colorBrandForeground1,
-      transform: 'translateY(-2px) scale(1.04)',
+  // Connector-pad shape wrapping each icon. Idle = matte copper, no glow.
+  navPad: {
+    display: 'grid',
+    placeItems: 'center',
+    width: '46px',
+    height: '40px',
+    borderRadius: '4px',
+    border: `1px solid ${COPPER.idle}`,
+    backgroundColor: tokens.colorNeutralBackground3,
+    color: 'inherit',
+    transitionDuration: tokens.durationNormal,
+    transitionProperty: 'background-color, color, border-color, box-shadow, transform',
+    transitionTimingFunction: EASE_ELECTRIC,
+    'button:hover &': {
+      border: `1px solid ${COPPER.idleLit}`,
+      transform: 'translateY(-2px)',
+    },
+    'button:active &': {
+      transform: 'translateY(0) scale(0.96)',
+    },
+  },
+  // Active pad = lit: signal-red border, brand fill, red glow.
+  navPadActive: {
+    border: `1px solid ${SIGNAL.red}`,
+    backgroundColor: 'rgba(255,45,45,0.12)',
+    color: SIGNAL.hot,
+    boxShadow: GLOW.md,
+    'button:hover &': {
+      border: `1px solid ${SIGNAL.hot}`,
+      transform: 'translateY(-2px)',
     },
   },
   navLabel: {
-    fontSize: tokens.fontSizeBase200,
-    fontWeight: tokens.fontWeightSemibold,
+    fontFamily: MONO_STACK,
+    fontSize: '9px',
+    fontWeight: 600,
+    letterSpacing: '0.12em',
+    textTransform: 'uppercase',
+  },
+  navLabelActive: {
+    color: SIGNAL.hot,
+    textShadow: GLOW.text,
   },
   railFooter: {
     display: 'flex',
@@ -252,30 +295,47 @@ const useStyles = makeStyles({
       animationName: 'none',
     },
   },
+  // Instrument status readout, not a marketing pill.
   badge: {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: tokens.spacingHorizontalXS,
+    gap: tokens.spacingHorizontalSNudge,
     paddingLeft: tokens.spacingHorizontalS,
     paddingRight: tokens.spacingHorizontalS,
-    paddingTop: tokens.spacingVerticalXXS,
-    paddingBottom: tokens.spacingVerticalXXS,
-    borderRadius: tokens.borderRadiusCircular,
-    backgroundColor: tokens.colorBrandBackground,
-    color: tokens.colorNeutralForegroundOnBrand,
+    paddingTop: '5px',
+    paddingBottom: '5px',
+    borderRadius: '4px',
+    border: `1px solid ${tokens.colorNeutralStroke1}`,
+    backgroundColor: tokens.colorNeutralBackground1,
   },
-  badgeSparkle: {
-    display: 'inline-flex',
-    animationName: {
-      '0%, 100%': { transform: 'scale(1) rotate(0deg)', opacity: 0.85 },
-      '50%': { transform: 'scale(1.25) rotate(90deg)', opacity: 1 },
-    },
-    animationDuration: '2.6s',
+  led: {
+    width: '8px',
+    height: '8px',
+    borderRadius: '50%',
+    backgroundColor: STATUS.active,
+    color: STATUS.active,
+    flexShrink: 0,
+    animationName: 'led-blink',
+    animationDuration: '1.8s',
     animationIterationCount: 'infinite',
-    animationTimingFunction: 'ease-in-out',
+    animationTimingFunction: 'steps(1, end)',
     '@media (prefers-reduced-motion: reduce)': {
       animationName: 'none',
+      boxShadow: `0 0 8px 1px ${STATUS.active}`,
     },
+  },
+  badgeText: {
+    fontFamily: MONO_STACK,
+    fontSize: tokens.fontSizeBase200,
+    fontWeight: 600,
+    letterSpacing: '0.1em',
+    color: tokens.colorNeutralForeground2,
+  },
+  badgeMuted: {
+    fontFamily: MONO_STACK,
+    fontSize: tokens.fontSizeBase200,
+    letterSpacing: '0.1em',
+    color: tokens.colorNeutralForeground4,
   },
 })
 
@@ -320,10 +380,11 @@ export function AppShell() {
           <span className={styles.brandMark} aria-hidden>
             <Board24Regular />
           </span>
-          <Caption1 style={{ fontWeight: tokens.fontWeightBold }}>Circuit</Caption1>
+          <span className={styles.brandWord}>YANTRAA</span>
         </div>
 
         <div className={styles.navList}>
+          <span className={styles.navTrace} aria-hidden />
           {NAV.map((item) => {
             const isActive = item.id === view
             return (
@@ -331,11 +392,15 @@ export function AppShell() {
                 key={item.id}
                 type="button"
                 aria-current={isActive ? 'page' : undefined}
-                className={mergeClasses(styles.navItem, isActive && styles.navItemActive)}
+                className={styles.navItem}
                 onClick={() => setView(item.id)}
               >
-                {isActive ? item.iconActive : item.icon}
-                <span className={styles.navLabel}>{item.label}</span>
+                <span className={mergeClasses(styles.navPad, isActive && styles.navPadActive)}>
+                  {isActive ? item.iconActive : item.icon}
+                </span>
+                <span className={mergeClasses(styles.navLabel, isActive && styles.navLabelActive)}>
+                  {item.label}
+                </span>
               </button>
             )
           })}
@@ -366,12 +431,9 @@ export function AppShell() {
             </Text>
           </div>
           <span className={styles.badge}>
-            <span className={styles.badgeSparkle}>
-              <Sparkle />
-            </span>
-            <Caption1 style={{ color: 'inherit', fontWeight: tokens.fontWeightSemibold }}>
-              For 1st & 2nd year students
-            </Caption1>
+            <span className={styles.led} aria-hidden />
+            <span className={styles.badgeText}>SYSTEM ONLINE</span>
+            <span className={styles.badgeMuted}>· 1ST&ndash;2ND YR</span>
           </span>
         </header>
 
@@ -438,12 +500,4 @@ export function AppShell() {
   )
 }
 
-function Sparkle() {
-  return (
-    <span aria-hidden style={{ display: 'inline-flex' }}>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2l1.9 5.6L19.5 9l-5.6 1.9L12 16l-1.9-5.1L4.5 9l5.6-1.4L12 2z" />
-      </svg>
-    </span>
-  )
-}
+

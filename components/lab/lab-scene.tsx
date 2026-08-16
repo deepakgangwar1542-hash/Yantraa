@@ -7,6 +7,7 @@ import * as THREE from 'three'
 import { getComponent, type ShapeKind } from '@/lib/electronics-data'
 import { ComponentShape, getPinAnchors } from '@/components/lab/component-mesh'
 import type { CircuitReport, PlacedInstance, Wire, WireEnd } from '@/lib/circuit-engine'
+import { SIGNAL, COPPER, STATUS } from '@/lib/theme'
 
 interface SceneProps {
   placed: PlacedInstance[]
@@ -192,16 +193,49 @@ function Breadboard() {
   )
 }
 
+/** Live current state of a wire, derived from the circuit-engine report. */
+type WirePower = 'off' | 'active' | 'warning' | 'error'
+
+const WIRE_STATE_COLOR: Record<WirePower, THREE.Color> = {
+  off: new THREE.Color(COPPER.idle),
+  active: new THREE.Color(SIGNAL.red),
+  warning: new THREE.Color(STATUS.warning),
+  error: new THREE.Color(STATUS.error),
+}
+const WIRE_HOVER_COLOR = new THREE.Color('#ffffff')
+
+/**
+ * Derives a wire's live current state from the circuit-engine report: a wire
+ * inherits the "worst" state of the two components it joins (error > warning >
+ * active), so a short/backwards part flashes its wires red-orange, an
+ * unprotected LED tints its wires amber, and a healthy loop pulses signal-red.
+ * Only meaningful while the simulation is running; idle wires stay copper.
+ */
+function wirePowerFor(w: Wire, report: CircuitReport, running: boolean): WirePower {
+  if (!running) return 'off'
+  const a = report.states[w.from.instanceId]
+  const b = report.states[w.to.instanceId]
+  if (!a || !b) return 'off'
+  if (a.status === 'error' || b.status === 'error') return 'error'
+  if (a.status === 'warning' || b.status === 'warning') return 'warning'
+  if (a.status === 'active' && b.status === 'active') return 'active'
+  return 'off'
+}
+
 function WireTube({
   start,
   end,
   color,
+  power,
   interactive,
   onDelete,
 }: {
   start: Vec3
   end: Vec3
+  /** Idle jumper color, shown while editing (sim not running). */
   color: string
+  /** Live current state while the simulation is running. */
+  power: WirePower
   interactive: boolean
   onDelete: () => void
 }) {
@@ -216,8 +250,53 @@ function WireTube({
   }, [start, end])
 
   const [hovered, setHovered] = React.useState(false)
+  const matRef = React.useRef<THREE.MeshStandardMaterial>(null)
+  const endMatRef = React.useRef<THREE.MeshStandardMaterial>(null)
+  // Idle jumper color while editing so wires stay distinguishable.
+  const idleColor = React.useMemo(() => new THREE.Color(color), [color])
 
   React.useEffect(() => () => geometry.dispose(), [geometry])
+
+  useFrame((state) => {
+    const mat = matRef.current
+    if (!mat) return
+    const t = state.clock.elapsedTime
+
+    if (hovered) {
+      mat.color.copy(WIRE_HOVER_COLOR)
+      mat.emissive.copy(WIRE_HOVER_COLOR)
+      mat.emissiveIntensity = 0.55
+    } else if (power === 'off') {
+      // Idle: flat jumper color, no glow. (matte copper once powered-down loop)
+      mat.color.copy(idleColor)
+      mat.emissive.setRGB(0, 0, 0)
+      mat.emissiveIntensity = 0
+    } else {
+      const c = WIRE_STATE_COLOR[power]
+      mat.color.copy(c)
+      mat.emissive.copy(c)
+      // Breathing pulse for active/warning; a sharp fast flash for error.
+      if (power === 'error') {
+        mat.emissiveIntensity = 0.5 + (Math.sin(t * 18) > 0 ? 1.1 : 0.2)
+      } else if (power === 'warning') {
+        mat.emissiveIntensity = 0.45 + (Math.sin(t * 4) * 0.5 + 0.5) * 0.5
+      } else {
+        mat.emissiveIntensity = 0.6 + (Math.sin(t * 7) * 0.5 + 0.5) * 0.7
+      }
+    }
+
+    const em = endMatRef.current
+    if (em) {
+      if (power === 'off' || hovered) {
+        em.emissiveIntensity = hovered ? 0.4 : 0
+      } else {
+        em.emissive.copy(WIRE_STATE_COLOR[power])
+        em.emissiveIntensity = mat.emissiveIntensity * 0.8
+      }
+    }
+  })
+
+  const live = power !== 'off'
 
   return (
     <group>
@@ -247,17 +326,26 @@ function WireTube({
         }}
       >
         <meshStandardMaterial
-          color={hovered ? '#ffffff' : color}
-          emissive={hovered ? '#ffffff' : '#000000'}
-          emissiveIntensity={hovered ? 0.55 : 0}
+          ref={matRef}
+          color={color}
+          emissive={'#000000'}
+          emissiveIntensity={0}
           roughness={0.35}
           metalness={0.1}
+          toneMapped={!live}
         />
       </mesh>
       {[start, end].map((p, i) => (
         <mesh key={i} position={p}>
           <sphereGeometry args={[0.07, 12, 12]} />
-          <meshStandardMaterial color="#111827" metalness={0.5} roughness={0.4} />
+          <meshStandardMaterial
+            ref={i === 0 ? endMatRef : undefined}
+            color="#111827"
+            emissive={SIGNAL.red}
+            emissiveIntensity={0}
+            metalness={0.5}
+            roughness={0.4}
+          />
         </mesh>
       ))}
     </group>
@@ -687,7 +775,7 @@ export function LabScene({
       {/* Procedural studio env for real reflections on metal/plastic.
           Renders once (frames={1}); no HDRI network fetch. */}
       <Environment resolution={256} frames={1}>
-        <color attach="background" args={['#0a0f1a']} />
+        <color attach="background" args={['#0b0d0f']} />
         <Lightformer
           intensity={1.4}
           position={[0, 6, 0]}
@@ -717,6 +805,7 @@ export function LabScene({
             start={start}
             end={end}
             color={WIRE_COLORS[idx % WIRE_COLORS.length]}
+            power={wirePowerFor(w, report, running)}
             interactive={mode === 'wire'}
             onDelete={() => onDeleteWire(w.id)}
           />
@@ -743,6 +832,7 @@ export function LabScene({
           const st = report.states[inst.instanceId]
           const isError = st?.status === 'error'
           const isWarning = st?.status === 'warning'
+          const isActive = running && st?.status === 'active'
           const lit = running && !!st?.lit
           const isPressed = def.id === 'button' && pressedIds.has(inst.instanceId)
           return (
@@ -772,8 +862,11 @@ export function LabScene({
                 pending={pendingWire}
                 onPinClick={(pinIndex) => onPinClick(inst.instanceId, pinIndex)}
               />
-              {isError && <SelectionRing color="#e5484d" />}
-              {isWarning && !isError && <SelectionRing color="#f5b301" />}
+              {isError && <SelectionRing color={STATUS.error} />}
+              {isWarning && !isError && <SelectionRing color={STATUS.warning} />}
+              {isActive && !isError && !isWarning && !isSelected && (
+                <SelectionRing color={SIGNAL.red} />
+              )}
               {isSelected && !isError && !isWarning && <SelectionRing color="#4ea1ff" />}
             </Draggable>
           )
