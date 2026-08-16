@@ -38,6 +38,8 @@ import {
   type WireEnd,
 } from '@/lib/circuit-engine'
 import { useHandControl } from '@/components/hand-control'
+import { useGuided } from '@/lib/guided-context'
+import { evaluateProgress } from '@/lib/projects'
 import { PCB, MONO_STACK, GLOW, STATUS } from '@/lib/theme'
 
 const LabScene = dynamic(
