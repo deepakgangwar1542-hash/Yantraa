@@ -17,6 +17,8 @@ import {
   BookOpen24Filled,
   CubeMultiple24Regular,
   CubeMultiple24Filled,
+  Rocket24Regular,
+  Rocket24Filled,
   WeatherMoon24Regular,
   WeatherSunny24Regular,
   Board24Regular,
@@ -28,13 +30,18 @@ import { SpatialLab } from '@/components/lab/spatial-lab'
 import { FloatingAssistant } from '@/components/assistant/floating-assistant'
 import { AmbientBackground } from '@/components/ambient-background'
 import { HandControlProvider, useHandControl } from '@/components/hand-control'
+import { BuildPath } from '@/components/projects/build-path'
+import { ProjectWorkspace } from '@/components/projects/project-workspace'
+import { GuidedProvider, useGuided } from '@/lib/guided-context'
+import { useProjectProgress } from '@/lib/use-project-progress'
+import type { Project } from '@/lib/projects'
 import {
   HandRight24Regular,
   HandRight24Filled,
 } from '@fluentui/react-icons'
 import { GLOW, SIGNAL, COPPER, STATUS, MONO_STACK, EASE_ELECTRIC } from '@/lib/theme'
 
-type ViewId = 'instructor' | 'library' | 'lab'
+type ViewId = 'instructor' | 'library' | 'lab' | 'build'
 
 const NAV: {
   id: ViewId
@@ -63,6 +70,13 @@ const NAV: {
     desc: 'Build circuits in 3D',
     icon: <CubeMultiple24Regular />,
     iconActive: <CubeMultiple24Filled />,
+  },
+  {
+    id: 'build',
+    label: 'Build Path',
+    desc: 'Guided projects, first light to living circuits',
+    icon: <Rocket24Regular />,
+    iconActive: <Rocket24Filled />,
   },
 ]
 
@@ -262,6 +276,7 @@ const useStyles = makeStyles({
     position: 'absolute',
     inset: 0,
     zIndex: 2,
+    display: 'flex',
     transitionProperty: 'opacity',
     transitionDuration: tokens.durationNormal,
   },
@@ -274,6 +289,15 @@ const useStyles = makeStyles({
     opacity: 0,
     visibility: 'hidden',
     pointerEvents: 'none',
+  },
+  // When a guided project is open, the workspace panel sits to the left of
+  // the shared lab canvas (same single WebGL context).
+  labGuided: {},
+  labCanvasSlot: {
+    position: 'relative',
+    flexGrow: 1,
+    minWidth: 0,
+    height: '100%',
   },
   viewLayer: {
     position: 'relative',
@@ -353,18 +377,47 @@ function HandsRailButton() {
 }
 
 export function AppShell() {
+  return (
+    <GuidedProvider>
+      <AppShellInner />
+    </GuidedProvider>
+  )
+}
+
+function AppShellInner() {
   const styles = useStyles()
   const { mode, setMode } = useThemeMode()
   const [view, setView] = React.useState<ViewId>('instructor')
+
+  // Guided "Build Path" state.
+  const { activeProject, progress, openProject, closeProject } = useGuided()
+  const progressStore = useProjectProgress()
+  const guidedActive = view === 'build' && activeProject != null
+
+  const handleOpenProject = React.useCallback(
+    (project: Project) => {
+      openProject(project)
+    },
+    [openProject],
+  )
+
+  const handleBackToRoadmap = React.useCallback(() => {
+    closeProject()
+  }, [closeProject])
 
   // Lazily mount the 3D Lab on first visit, then keep it mounted forever so its
   // WebGL context and canvas state persist across view switches (see <Activity>
   // usage below). This also guarantees only one WebGL context is ever alive at a
   // time: the ambient background canvas is unmounted once the lab exists.
+  // The guided Build Path reuses this same single lab instance.
   const [labMounted, setLabMounted] = React.useState(false)
   React.useEffect(() => {
-    if (view === 'lab') setLabMounted(true)
-  }, [view])
+    if (view === 'lab' || guidedActive) setLabMounted(true)
+  }, [view, guidedActive])
+
+  // The single lab canvas is visible for free-build (3D Lab view) OR when a
+  // guided project is open in the Build Path.
+  const labVisible = view === 'lab' || guidedActive
 
   const active = NAV.find((n) => n.id === view)!
 
@@ -389,7 +442,11 @@ export function AppShell() {
                 type="button"
                 aria-current={isActive ? 'page' : undefined}
                 className={styles.navItem}
-                onClick={() => setView(item.id)}
+                onClick={() => {
+                  // Leaving the Build Path returns the shared lab to free-build.
+                  if (item.id !== 'build' && activeProject) closeProject()
+                  setView(item.id)
+                }}
               >
                 <span className={mergeClasses(styles.navPad, isActive && styles.navPadActive)}>
                   {isActive ? item.iconActive : item.icon}
@@ -421,7 +478,13 @@ export function AppShell() {
       <div className={styles.main}>
         <header className={styles.header}>
           <div className={styles.headerText}>
-            <Title3>{active.label === '3D Lab' ? '3D Spatial Lab' : `Hardware ${active.label}`}</Title3>
+            <Title3>
+              {active.label === '3D Lab'
+                ? '3D Spatial Lab'
+                : active.label === 'Build Path'
+                  ? 'Build Path'
+                  : `Hardware ${active.label}`}
+            </Title3>
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
               {active.desc}
             </Text>
@@ -441,12 +504,12 @@ export function AppShell() {
             Once the lab has been opened it stays mounted, so from then on the
             background is replaced by a lightweight CSS gradient fallback.
           */}
-          {view !== 'lab' && !labMounted && (
+          {!labVisible && !labMounted && (
             <div className={styles.bgLayer}>
               <AmbientBackground />
             </div>
           )}
-          {view !== 'lab' && labMounted && (
+          {!labVisible && labMounted && (
             <div className={mergeClasses(styles.bgLayer, styles.bgFallback)} aria-hidden />
           )}
           {view === 'instructor' && (
@@ -472,11 +535,36 @@ export function AppShell() {
             <div
               className={mergeClasses(
                 styles.labHost,
-                view === 'lab' ? styles.labVisible : styles.labHidden,
+                labVisible ? styles.labVisible : styles.labHidden,
+                guidedActive ? styles.labGuided : undefined,
               )}
-              aria-hidden={view !== 'lab'}
+              aria-hidden={!labVisible}
             >
-              <SpatialLab />
+              {/* Guided workspace panel sits beside the shared lab canvas. */}
+              {guidedActive && activeProject && (
+                <ProjectWorkspace
+                  project={activeProject}
+                  progress={progress}
+                  onBack={handleBackToRoadmap}
+                  onComplete={progressStore.complete}
+                />
+              )}
+              <div className={styles.labCanvasSlot}>
+                <SpatialLab />
+              </div>
+            </div>
+          )}
+
+          {/* Build Path roadmap — shown when no project is open. */}
+          {view === 'build' && !guidedActive && (
+            <div key="build" className={styles.viewLayer}>
+              <BuildPath
+                onOpen={handleOpenProject}
+                completed={progressStore.completed}
+                isCompleted={progressStore.isCompleted}
+                isUnlocked={progressStore.isUnlocked}
+                hydrated={progressStore.hydrated}
+              />
             </div>
           )}
 
@@ -486,8 +574,11 @@ export function AppShell() {
             switching between those two views; it unmounts on Instructor, which
             has its own full-screen tutor.
           */}
-          {(view === 'library' || view === 'lab') && (
-            <FloatingAssistant key="floating-assistant" context={view === 'lab' ? 'lab' : 'library'} />
+          {(view === 'library' || view === 'lab' || guidedActive) && (
+            <FloatingAssistant
+              key="floating-assistant"
+              context={view === 'library' ? 'library' : 'lab'}
+            />
           )}
         </div>
       </div>

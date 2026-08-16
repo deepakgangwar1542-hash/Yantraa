@@ -2,6 +2,17 @@ import type { PlacedInstance, Wire, CircuitReport } from '@/lib/circuit-engine'
 
 export type ProjectTier = 'beginner' | 'intermediate'
 
+export const TIER_LABELS: Record<ProjectTier, { name: string; blurb: string }> = {
+  beginner: {
+    name: 'Foundations',
+    blurb: 'Power, polarity, and your first glowing LED.',
+  },
+  intermediate: {
+    name: 'Real Circuits',
+    blurb: 'Switches, sensors, and logic that reacts to the world.',
+  },
+}
+
 export interface ProjectStep {
   id: string
   instruction: string
