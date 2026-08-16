@@ -12,6 +12,7 @@ import {
   type HandPose,
 } from '@/lib/hand-tracking'
 import { STATUS, MONO_STACK, PCB } from '@/lib/theme'
+import { handOrbit } from '@/lib/hand-orbit'
 
 /* ------------------------------------------------------------------ */
 /* Context                                                            */
@@ -276,7 +277,7 @@ const useStyles = makeStyles({
   },
   pip: {
     position: 'fixed',
-    right: '18px',
+    left: '18px',
     bottom: '18px',
     zIndex: 9002,
     pointerEvents: 'auto',
@@ -286,6 +287,7 @@ const useStyles = makeStyles({
     border: `1px solid ${PCB.strokeRed}`,
     backgroundColor: tokens.colorNeutralBackground1,
     boxShadow: tokens.shadow16,
+    touchAction: 'none',
   },
   pipVideoWrap: {
     position: 'relative',
@@ -316,6 +318,8 @@ const useStyles = makeStyles({
     alignItems: 'center',
     gap: '8px',
     padding: '6px 8px',
+    cursor: 'grab',
+    ':active': { cursor: 'grabbing' },
   },
   pipHint: {
     padding: '0 8px 8px',
@@ -403,7 +407,6 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
   const rafRef = React.useRef<number>(0)
   const lastFrameRef = React.useRef(0)
   const poseRef = React.useRef<HandPose | null>(null)
-  const downTargetRef = React.useRef<Element | null>(null)
   const lastScrollYRef = React.useRef<number | null>(null)
   const smoothRef = React.useRef({ x: 0.5, y: 0.5 })
   const lastOpennessRef = React.useRef<number | null>(null)
@@ -413,6 +416,26 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
   const pinchPendingRef = React.useRef(0)
   const enabledRef = React.useRef(false)
   enabledRef.current = enabled
+
+  /* ---- gesture state machine refs --------------------------------- */
+  // Initialized to 0 (SSR-safe); the gesture loop overwrites these before use.
+  const lastXRef = React.useRef(0)
+  const lastYRef = React.useRef(0)
+  const prevPinchRef = React.useRef(false)
+  // Tight-fist → orbit the 3D view (hysteresis so it doesn't flicker).
+  const fistOnRef = React.useRef(false)
+  // Timestamp when the fist pose first became continuously held (null = not held).
+  const fistSinceRef = React.useRef<number | null>(null)
+  const orbitActiveRef = React.useRef(false)
+  const orbitPtrRef = React.useRef({ x: 0, y: 0 })
+  const orbitOriginRef = React.useRef({ nx: 0.5, ny: 0.5 })
+  const orbitCanvasRef = React.useRef<Element | null>(null)
+  // A normal pinch press (click / pin-connect / start of a drag).
+  const pressActiveRef = React.useRef(false)
+  const pressStartPosRef = React.useRef({ x: 0, y: 0 })
+  const pressMovedRef = React.useRef(false)
+  const pressTargetRef = React.useRef<Element | null>(null)
+
 
   /* ---- main loop -------------------------------------------------- */
   React.useEffect(() => {
@@ -547,81 +570,201 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
   React.useEffect(() => {
     if (!enabled) return
 
+    // Tell the 3D lab that hand control is driving it, so the camera only
+    // rotates during the fist gesture (never during wiring pinch-drags).
+    handOrbit.setHandActive(true)
+    handOrbit.setOrbitGesture(false)
+
+    // Gesture tuning constants.
+    const FIST_ON = 0.1 // orbit engages ONLY on a fully closed fist
+    const FIST_OFF = 0.2 // the moment the hand starts opening, orbit releases
+    const FIST_HOLD_MS = 200 // fist must be held this long before orbit engages
+    const ZOOM_STEP = 0.07 // openness delta per zoom "notch"
+    const TAP_MOVE = 0.03 // hand travel (normalized) below which a pinch counts as a tap
+
+    /** The <canvas> under a screen point, if any (the 3D lab surface). */
+    const canvasAt = (px: number, py: number): Element | null => {
+      const el = document.elementFromPoint(px, py)
+      if (!el) return null
+      if (el instanceof HTMLCanvasElement) return el
+      return el.closest?.('canvas') ?? null
+    }
+
+    const endOrbit = () => {
+      handOrbit.setOrbitGesture(false)
+      if (!orbitActiveRef.current) return
+      const a = orbitPtrRef.current
+      dispatchPointer('pointerup', a.x, a.y, 0, orbitCanvasRef.current)
+      orbitActiveRef.current = false
+      setDown(false)
+    }
+
     const step = () => {
       const p = poseRef.current
+
+      // Hand lost: gracefully end any in-progress gesture so nothing sticks.
       if (!p || !p.visible) {
+        endOrbit()
+        const x = lastXRef.current
+        const y = lastYRef.current
+        if (pressActiveRef.current) {
+          dispatchPointer('pointerup', x, y, 0, document.elementFromPoint(x, y))
+          pressActiveRef.current = false
+          setDown(false)
+        }
         lastScrollYRef.current = null
+        lastOpennessRef.current = null
+        prevPinchRef.current = false
+        fistOnRef.current = false
+        fistSinceRef.current = null
         return
       }
+
       const x = p.x * window.innerWidth
       const y = p.y * window.innerHeight
-
+      lastXRef.current = x
+      lastYRef.current = y
       const hovering = document.elementFromPoint(x, y)
-      dispatchPointer('pointermove', x, y, downTargetRef.current ? 1 : 0, hovering)
 
-      // open / close hand to zoom — only while not pinching/scrolling/dragging so
-      // it never fights the cursor, click or scroll gestures.
-      if (!p.pinch && !p.scroll && !downTargetRef.current) {
-        const prev = lastOpennessRef.current
-        if (prev !== null) {
-          const d = p.openness - prev
-          // Ignore tiny frame-to-frame noise; only deliberate opening/closing counts.
-          if (Math.abs(d) > 0.012) zoomAccumRef.current += d
-        }
-        lastOpennessRef.current = p.openness
+      // Raw fist pose from openness, with hysteresis so it doesn't flicker.
+      const fistPoseRaw = fistOnRef.current ? p.openness < FIST_OFF : p.openness < FIST_ON
+      fistOnRef.current = fistPoseRaw
 
-        // Each accumulated chunk of openness fires one wheel notch, giving a
-        // smooth, controllable zoom as the hand opens (in) or closes (out).
-        const STEP = 0.07
-        let ticks = 0
-        while (zoomAccumRef.current > STEP && ticks < 4) {
-          zoomAccumRef.current -= STEP
-          ticks += 1
-          dispatchWheel(x, y, -100, zoomTargetAt(x, y)) // opening → zoom in
-        }
-        while (zoomAccumRef.current < -STEP && ticks < 4) {
-          zoomAccumRef.current += STEP
-          ticks += 1
-          dispatchWheel(x, y, 100, zoomTargetAt(x, y)) // closing → zoom out
-        }
+      // A pinch curls the fingers too, so a pinch pose also reads as low openness.
+      // Pinch and any active press ALWAYS win over the fist — otherwise a hand
+      // curling into a pinch to select/drag would be hijacked by the orbit
+      // gesture. This is the key rule that keeps selection working.
+      const fistPose = fistPoseRaw && !p.pinch && !pressActiveRef.current
+
+      // Debounce: only treat it as a real fist once it's been held briefly, so a
+      // transient curl on the way into a pinch can't flash the orbit on.
+      const now = performance.now()
+      if (fistPose) {
+        if (fistSinceRef.current === null) fistSinceRef.current = now
       } else {
+        fistSinceRef.current = null
+      }
+      const fistOn = fistPose && now - (fistSinceRef.current ?? now) >= FIST_HOLD_MS
+
+      // Pinch rising / falling edges (pose.pinch is already hysteresis-debounced).
+      const pinchRise = p.pinch && !prevPinchRef.current
+      const pinchFall = !p.pinch && prevPinchRef.current
+      prevPinchRef.current = p.pinch
+
+      /* ---------- ORBIT: tight fist rotates the 3D view --------------- */
+      // Exclusive gesture; only a fully closed fist rotates the camera. Any
+      // other pose leaves the view perfectly stable so wiring is precise.
+      if (fistOn && !pressActiveRef.current && !p.pinch) {
+        const canvas = canvasAt(x, y) ?? document.querySelector('canvas')
+        if (!orbitActiveRef.current) {
+          // Unlock camera rotation for this gesture only.
+          handOrbit.setOrbitGesture(true)
+          // Anchor the drag at a safe, empty-ish spot on the board so the first
+          // pointerdown drives OrbitControls instead of grabbing a component.
+          const r = (canvas as Element | null)?.getBoundingClientRect()
+          const ax = r ? r.left + r.width * 0.14 : x
+          const ay = r ? r.top + r.height * 0.16 : y
+          orbitPtrRef.current = { x: ax, y: ay }
+          orbitOriginRef.current = { nx: p.x, ny: p.y }
+          orbitCanvasRef.current = canvas
+          dispatchPointer('pointerdown', ax, ay, 1, canvas)
+          orbitActiveRef.current = true
+          setDown(true)
+        } else {
+          // Translate hand travel into pointer travel around the anchor so the
+          // view rotates as the fist moves.
+          const a = orbitPtrRef.current
+          const o = orbitOriginRef.current
+          const px = a.x + (p.x - o.nx) * window.innerWidth
+          const py = a.y + (p.y - o.ny) * window.innerHeight
+          dispatchPointer('pointermove', px, py, 1, orbitCanvasRef.current)
+        }
+        lastScrollYRef.current = null
         lastOpennessRef.current = null
         zoomAccumRef.current = 0
+        return
       }
+      endOrbit()
 
-      // two-finger scroll: vertical hand movement scrolls the hovered container
-      if (p.scroll) {
+      // Baseline hover / drag move. While a pinch is held the button stays down
+      // so a component drag or a wire drag follows the hand continuously.
+      const buttons = pressActiveRef.current ? 1 : 0
+      dispatchPointer('pointermove', x, y, buttons, hovering)
+
+      /* ---------- TWO FINGERS up / down: zoom the lab OR scroll panels -
+       * A single vocabulary for vertical hand travel with two fingers up
+       * (index + middle). Over the 3D lab it drives the zoom wheel; over any
+       * scrollable panel it scrolls. Open / close no longer zooms, so it can
+       * never be confused with the fist-orbit gesture.
+       */
+      if (p.scroll && !pressActiveRef.current) {
+        const overCanvas = !!canvasAt(x, y)
         if (lastScrollYRef.current !== null) {
-          const delta = (lastScrollYRef.current - p.y) * window.innerHeight * 0.9
-          if (Math.abs(delta) > 0.5) {
-            const scroller = findScrollable(hovering)
-            scroller?.scrollBy({ top: delta })
+          const dy = lastScrollYRef.current - p.y // hand up (dy>0) → zoom in / scroll up
+          if (overCanvas) {
+            // Accumulate travel into discrete zoom notches for a smooth zoom.
+            zoomAccumRef.current += dy
+            let ticks = 0
+            while (zoomAccumRef.current > ZOOM_STEP && ticks < 4) {
+              zoomAccumRef.current -= ZOOM_STEP
+              ticks += 1
+              dispatchWheel(x, y, -100, zoomTargetAt(x, y)) // hand up → zoom in
+            }
+            while (zoomAccumRef.current < -ZOOM_STEP && ticks < 4) {
+              zoomAccumRef.current += ZOOM_STEP
+              ticks += 1
+              dispatchWheel(x, y, 100, zoomTargetAt(x, y)) // hand down → zoom out
+            }
+          } else {
+            const delta = dy * window.innerHeight * 0.9
+            if (Math.abs(delta) > 0.5) findScrollable(hovering)?.scrollBy({ top: delta })
           }
         }
         lastScrollYRef.current = p.y
       } else {
         lastScrollYRef.current = null
+        zoomAccumRef.current = 0
       }
 
-      // pinch click / drag
-      if (p.pinch && !downTargetRef.current) {
-        downTargetRef.current = hovering
+      /* ---------- PINCH: press → drag → release ----------------------
+       * A pinch is a real pointer press. Hold and move to drag a component
+       * (move mode) or pull a wire from one pin to another (wire mode); the
+       * matching pin's pointerup verifies and lays the jumper. A pinch that
+       * doesn't move is a plain click (select / press a button).
+       */
+      if (pinchRise && !pressActiveRef.current) {
+        pressActiveRef.current = true
+        pressMovedRef.current = false
+        pressStartPosRef.current = { x, y }
+        pressTargetRef.current = hovering
         dispatchPointer('pointerdown', x, y, 1, hovering)
         setDown(true)
-      } else if (!p.pinch && downTargetRef.current) {
-        const target = downTargetRef.current
-        downTargetRef.current = null
+      } else if (pinchFall && pressActiveRef.current) {
+        pressActiveRef.current = false
         dispatchPointer('pointerup', x, y, 0, hovering)
-        dispatchClick(x, y, target)
+        // Only synthesize a click when the hand stayed put — a drag already
+        // delivered its own down/move/up to the pin or component.
+        if (!pressMovedRef.current) dispatchClick(x, y, pressTargetRef.current)
         setDown(false)
         setFlash((f) => f + 1)
-      } else if (p.pinch && downTargetRef.current) {
-        dispatchPointer('pointermove', x, y, 1, hovering)
+      } else if (p.pinch && pressActiveRef.current) {
+        // Holding: once the hand travels past the tap threshold it's a drag.
+        const sp = pressStartPosRef.current
+        if (
+          Math.hypot(p.x - sp.x / window.innerWidth, p.y - sp.y / window.innerHeight) > TAP_MOVE
+        ) {
+          pressMovedRef.current = true
+        }
       }
     }
 
     const interval = window.setInterval(step, 33)
-    return () => window.clearInterval(interval)
+    return () => {
+      window.clearInterval(interval)
+      // Hand control is off — restore normal (mouse) camera behavior.
+      handOrbit.setOrbitGesture(false)
+      handOrbit.setHandActive(false)
+    }
   }, [enabled])
 
   // Feed the camera stream into both the hidden detection video and the PiP preview.
@@ -641,6 +784,37 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
   }, [])
 
   const value = React.useMemo(() => ({ enabled, setEnabled: toggle }), [enabled, toggle])
+
+  /* ---- draggable camera feed (starts bottom-left) ----------------- */
+  const pipRef = React.useRef<HTMLDivElement>(null)
+  const [pipPos, setPipPos] = React.useState<{ left: number; top: number } | null>(null)
+
+  const startPipDrag = React.useCallback((e: React.PointerEvent) => {
+    // Don't start a drag when the pointer is on the dismiss button.
+    if ((e.target as Element).closest('button')) return
+    const el = pipRef.current
+    if (!el) return
+    e.preventDefault()
+    const rect = el.getBoundingClientRect()
+    const offX = e.clientX - rect.left
+    const offY = e.clientY - rect.top
+    const move = (ev: PointerEvent) => {
+      const left = clamp(ev.clientX - offX, 4, window.innerWidth - rect.width - 4)
+      const top = clamp(ev.clientY - offY, 4, window.innerHeight - rect.height - 4)
+      setPipPos({ left, top })
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }, [])
+
+  // When positioned by dragging, override the default bottom-left anchor.
+  const pipStyle = pipPos
+    ? { left: pipPos.left, top: pipPos.top, right: 'auto' as const, bottom: 'auto' as const }
+    : undefined
 
   return (
     <HandControlContext.Provider value={value}>
@@ -681,7 +855,7 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
           <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
             {status === 'ready'
               ? pose?.visible
-                ? 'Pinch to select · open / close to zoom · two fingers to scroll'
+                ? 'Fist to orbit · two fingers to zoom · pinch to select & wire'
                 : 'Show your hand to the camera'
               : status === 'loading'
                 ? 'Loading hand-tracking model…'
@@ -713,7 +887,7 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
       )}
 
       {enabled && status !== 'error' && (
-        <div className={styles.pip}>
+        <div ref={pipRef} className={styles.pip} style={pipStyle}>
           <div className={styles.pipVideoWrap}>
             <video
               style={{ transform: 'scaleX(-1)' }}
@@ -732,7 +906,7 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
               aria-hidden
             />
           </div>
-          <div className={styles.pipBar}>
+          <div className={styles.pipBar} onPointerDown={startPipDrag} title="Drag to move the camera feed">
             <span
               className={`${styles.trackLed} ${pose?.visible ? styles.trackLive : styles.trackSearch}`}
               aria-hidden
@@ -761,11 +935,13 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
           <div className={styles.pipHint}>
             <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
               {pose?.visible
-                ? pose.pinch
-                  ? 'Pinch held — holding / dragging'
-                  : pose.fist
-                    ? 'Fist — open your hand to zoom in'
-                    : 'Index moves cursor · pinch to select · open / close to zoom'
+                ? pose.fist
+                  ? 'Fist — move to orbit the view'
+                  : pose.pinch
+                    ? 'Pinch held — drag to move parts or pull a wire'
+                    : pose.scroll
+                      ? 'Two fingers — move up / down to zoom'
+                      : 'Fist orbits · two fingers zoom · pinch a pin & drag to wire'
                 : 'Move your hand into view'}
             </Text>
           </div>

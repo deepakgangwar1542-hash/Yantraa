@@ -18,7 +18,7 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: 'YANTRAA \u2014 Learn Electronics in 3D',
   description:
-    'YANTRAA is a flagship interactive electronics-learning platform for 1st & 2nd year engineering students: an AI hardware tutor, a component library with 3D viewing, and a spatial 3D circuit-building lab. No hardware required.',
+    'YANTRAA is a flagship interactive electronics-learning platform for engineering students: an AI hardware tutor, a component library with 3D viewing, and a spatial 3D circuit-building lab. No hardware required.',
   keywords: [
     'electronics',
     'learn electronics',

@@ -38,6 +38,14 @@ import {
   type WireEnd,
 } from '@/lib/circuit-engine'
 import { useHandControl } from '@/components/hand-control'
+import {
+  labBus,
+  labSnapshot,
+  resolveInstanceId,
+  resolvePinIndex,
+  type LabAction,
+} from '@/lib/lab-actions'
+import { pinRegistry, PIN_SNAP_PX } from '@/lib/pin-registry'
 import { useGuided } from '@/lib/guided-context'
 import { evaluateProgress } from '@/lib/projects'
 import { PCB, MONO_STACK, GLOW, STATUS } from '@/lib/theme'
@@ -312,6 +320,16 @@ export function SpatialLab() {
   const [pendingWire, setPendingWire] = React.useState<WireEnd | null>(null)
   const [pressedIds, setPressedIds] = React.useState<ReadonlySet<string>>(new Set())
 
+  // Synchronous mirror of pendingWire + which pin a press started on, so the
+  // press/release wiring flow (mouse click-click OR hand pinch-drag) works
+  // without waiting for React state to settle.
+  const pendingRef = React.useRef<WireEnd | null>(null)
+  pendingRef.current = pendingWire
+  const pinPressRef = React.useRef<{ instanceId: string; pinIndex: number; started: boolean } | null>(null)
+  // Timestamp of the last EXACT pin raycast hit. The screen-space snap fallback
+  // uses it to tell whether a press/release already landed on a real pin.
+  const pinHitAtRef = React.useRef(0)
+
   // ---- Guided "Build Path" mode -----------------------------------------
   // The Build Path reuses this single lab instance so we never open a second
   // WebGL context. When a project is active we pre-place its parts, force
@@ -372,7 +390,7 @@ export function SpatialLab() {
     reportProgress(evaluateProgress(activeProject, wires, report))
   }, [activeProject, wires, report, reportProgress])
 
-  const addComponent = React.useCallback((componentId: string) => {
+  const addComponent = React.useCallback((componentId: string, instanceId?: string) => {
     setPlaced((prev) => {
       const index = prev.length
       const x = -3 + (index % 4) * 2
@@ -383,7 +401,7 @@ export function SpatialLab() {
         0,
         Math.max(-3.5, Math.min(3.5, snap(z))),
       ]
-      return [...prev, { instanceId: nextId(), componentId, position: pos }]
+      return [...prev, { instanceId: instanceId ?? nextId(), componentId, position: pos }]
     })
   }, [])
 
@@ -404,43 +422,136 @@ export function SpatialLab() {
     [mode],
   )
 
-  const handlePinClick = React.useCallback(
+  const connectWire = React.useCallback((from: WireEnd, to: WireEnd) => {
+    setWires((prev) => {
+      const exists = prev.some(
+        (w) =>
+          (w.from.instanceId === from.instanceId &&
+            w.from.pinIndex === from.pinIndex &&
+            w.to.instanceId === to.instanceId &&
+            w.to.pinIndex === to.pinIndex) ||
+          (w.from.instanceId === to.instanceId &&
+            w.from.pinIndex === to.pinIndex &&
+            w.to.instanceId === from.instanceId &&
+            w.to.pinIndex === from.pinIndex),
+      )
+      if (exists) return prev
+      return [...prev, { id: `wire-${nextId()}`, from, to }]
+    })
+  }, [])
+
+  // Press on a pin: select the component and, in wire mode, arm the pending
+  // endpoint if none is armed yet. Works for a mouse press or a hand pinch.
+  const handlePinDown = React.useCallback(
     (instanceId: string, pinIndex: number) => {
       setSelectedId(instanceId)
       if (mode !== 'wire') return
-      setPendingWire((pending) => {
-        if (!pending) return { instanceId, pinIndex }
-        // Clicking the same pin again cancels the pending wire.
-        if (pending.instanceId === instanceId && pending.pinIndex === pinIndex) {
-          return null
-        }
-        setWires((prev) => {
-          const exists = prev.some(
-            (w) =>
-              (w.from.instanceId === pending.instanceId &&
-                w.from.pinIndex === pending.pinIndex &&
-                w.to.instanceId === instanceId &&
-                w.to.pinIndex === pinIndex) ||
-              (w.from.instanceId === instanceId &&
-                w.from.pinIndex === pinIndex &&
-                w.to.instanceId === pending.instanceId &&
-                w.to.pinIndex === pending.pinIndex),
-          )
-          if (exists) return prev
-          return [
-            ...prev,
-            {
-              id: `wire-${nextId()}`,
-              from: pending,
-              to: { instanceId, pinIndex },
-            },
-          ]
-        })
-        return null
-      })
+      pinHitAtRef.current = performance.now()
+      const started = !pendingRef.current
+      if (started) {
+        pendingRef.current = { instanceId, pinIndex }
+        setPendingWire(pendingRef.current)
+      }
+      pinPressRef.current = { instanceId, pinIndex, started }
     },
     [mode],
   )
+
+  // Release on a pin: if a different pin is armed, connect the two (this is the
+  // drag-to-connect completion). Releasing on the armed pin keeps it armed the
+  // first time, and cancels it on a second, deliberate tap.
+  const handlePinUp = React.useCallback(
+    (instanceId: string, pinIndex: number) => {
+      if (mode !== 'wire') return
+      pinHitAtRef.current = performance.now()
+      const pending = pendingRef.current
+      const press = pinPressRef.current
+      pinPressRef.current = null
+      if (!pending) return
+      const samePin = pending.instanceId === instanceId && pending.pinIndex === pinIndex
+      if (samePin) {
+        // Keep the arm alive on the initial press; cancel on a later re-tap.
+        if (press && press.started && press.instanceId === instanceId && press.pinIndex === pinIndex) {
+          return
+        }
+        pendingRef.current = null
+        setPendingWire(null)
+        return
+      }
+      // Different pin → verify and lay the jumper between these exact nodes.
+      connectWire(pending, { instanceId, pinIndex })
+      pendingRef.current = null
+      setPendingWire(null)
+    },
+    [mode, connectWire],
+  )
+
+  // Screen-space snapping fallback for imprecise (hand-tracking) cursors. If a
+  // press/release did NOT land on a real pin, snap to the NEAREST pin within a
+  // pixel radius: arm it on press, or complete the jumper on release. The exact
+  // R3F pin raycast still wins for a precise mouse; this only fills the gaps.
+  React.useEffect(() => {
+    if (mode !== 'wire') return
+    const EXACT_MS = 60 // a real pin hit this recent means the exact path handled it
+
+    const onDown = (e: PointerEvent) => {
+      const { clientX, clientY } = e
+      requestAnimationFrame(() => {
+        if (performance.now() - pinHitAtRef.current < EXACT_MS) return
+        if (pendingRef.current) return
+        const near = pinRegistry.nearest(clientX, clientY, PIN_SNAP_PX, null)
+        if (!near) return
+        pendingRef.current = { instanceId: near.instanceId, pinIndex: near.pinIndex }
+        setPendingWire(pendingRef.current)
+        setSelectedId(near.instanceId)
+        pinPressRef.current = {
+          instanceId: near.instanceId,
+          pinIndex: near.pinIndex,
+          started: true,
+        }
+      })
+    }
+
+    const onUp = (e: PointerEvent) => {
+      const { clientX, clientY } = e
+      requestAnimationFrame(() => {
+        if (performance.now() - pinHitAtRef.current < EXACT_MS) return
+        const pending = pendingRef.current
+        if (!pending) return
+        const press = pinPressRef.current
+        pinPressRef.current = null
+
+        // If the release is still on/near the ARMED pin, this was a tap in place,
+        // not a drag to another pin. Keep it armed if we just armed it this press
+        // (so a lone tap starts a jumper); otherwise a deliberate re-tap cancels.
+        // This mirrors the exact-hit path and prevents a single tap from snapping
+        // to the OTHER pin of the same part and shorting it.
+        const armed = pinRegistry
+          .all()
+          .find((p) => p.instanceId === pending.instanceId && p.pinIndex === pending.pinIndex)
+        if (armed && Math.hypot(armed.x - clientX, armed.y - clientY) < PIN_SNAP_PX) {
+          if (press?.started) return // just armed this press → keep it armed
+          pendingRef.current = null // re-tap on the armed pin → cancel
+          setPendingWire(null)
+          return
+        }
+
+        // Released away from the armed pin → complete to the nearest other pin.
+        const near = pinRegistry.nearest(clientX, clientY, PIN_SNAP_PX, pending)
+        if (!near) return
+        connectWire(pending, { instanceId: near.instanceId, pinIndex: near.pinIndex })
+        pendingRef.current = null
+        setPendingWire(null)
+      })
+    }
+
+    window.addEventListener('pointerdown', onDown)
+    window.addEventListener('pointerup', onUp)
+    return () => {
+      window.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('pointerup', onUp)
+    }
+  }, [mode, connectWire])
 
   const deleteWire = React.useCallback((id: string) => {
     setWires((prev) => prev.filter((w) => w.id !== id))
@@ -488,6 +599,78 @@ export function SpatialLab() {
     setMode(m)
     setPendingWire(null)
   }, [])
+
+  // Keep a synchronous mirror of the board so voice actions in one batch
+  // (e.g. "add a resistor and connect it") can resolve parts added moments ago,
+  // and so the voice layer can describe the board to the LLM.
+  const placedForVoiceRef = React.useRef<PlacedInstance[]>([])
+  React.useEffect(() => {
+    placedForVoiceRef.current = placed
+    labSnapshot.set(placed)
+  }, [placed])
+
+  // Execute an ordered batch of voice actions against the real lab callbacks.
+  const runVoiceActions = React.useCallback(
+    (actions: LabAction[]) => {
+      // Work against a local copy of the board that grows as we add parts, so a
+      // later connect in the same utterance can see an earlier add.
+      let board = [...placedForVoiceRef.current]
+      for (const action of actions) {
+        switch (action.type) {
+          case 'add': {
+            const id = nextId()
+            addComponent(action.componentId, id)
+            board = [...board, { instanceId: id, componentId: action.componentId, position: [0, 0, 0] }]
+            setSelectedId(id)
+            break
+          }
+          case 'mode':
+            switchMode(action.mode)
+            break
+          case 'connect': {
+            const fromId = resolveInstanceId(board, action.from.component)
+            const toId = resolveInstanceId(board, action.to.component)
+            if (!fromId || !toId) break
+            switchMode('wire')
+            connectWire(
+              { instanceId: fromId, pinIndex: resolvePinIndex(action.from.component.componentId, action.from.pinHint) },
+              { instanceId: toId, pinIndex: resolvePinIndex(action.to.component.componentId, action.to.pinHint) },
+            )
+            break
+          }
+          case 'run':
+            setRunning(action.on)
+            break
+          case 'delete': {
+            const id = action.component
+              ? resolveInstanceId(board, action.component)
+              : selectedId
+            if (id) {
+              deleteInstance(id)
+              board = board.filter((p) => p.instanceId !== id)
+            }
+            break
+          }
+          case 'clear':
+            clearAll()
+            board = []
+            break
+          case 'press': {
+            const id = resolveInstanceId(board, action.component)
+            if (id) togglePress(id)
+            break
+          }
+          case 'zoom':
+            // Zoom is handled visually by the voice component via the wheel; no
+            // board state to change here.
+            break
+        }
+      }
+    },
+    [addComponent, switchMode, connectWire, deleteInstance, clearAll, togglePress, selectedId],
+  )
+
+  React.useEffect(() => labBus.subscribe(runVoiceActions), [runVoiceActions])
 
   // Escape cancels a pending wire and deselects.
   React.useEffect(() => {
@@ -546,7 +729,8 @@ export function SpatialLab() {
           report={report}
           pressedIds={pressedIds}
           onSelect={handleSelect}
-          onPinClick={handlePinClick}
+          onPinDown={handlePinDown}
+          onPinUp={handlePinUp}
           onMove={handleMove}
           onRemove={deleteInstance}
           onDragStateChange={() => {}}

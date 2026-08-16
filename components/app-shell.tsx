@@ -30,6 +30,7 @@ import { SpatialLab } from '@/components/lab/spatial-lab'
 import { FloatingAssistant } from '@/components/assistant/floating-assistant'
 import { AmbientBackground } from '@/components/ambient-background'
 import { HandControlProvider, useHandControl } from '@/components/hand-control'
+import { VoiceControlProvider, useVoiceControl } from '@/components/voice-control'
 import { BuildPath } from '@/components/projects/build-path'
 import { ProjectWorkspace } from '@/components/projects/project-workspace'
 import { GuidedProvider, useGuided } from '@/lib/guided-context'
@@ -38,6 +39,8 @@ import type { Project } from '@/lib/projects'
 import {
   HandRight24Regular,
   HandRight24Filled,
+  Mic24Regular,
+  Mic24Filled,
 } from '@fluentui/react-icons'
 import { GLOW, SIGNAL, COPPER, STATUS, MONO_STACK, EASE_ELECTRIC } from '@/lib/theme'
 
@@ -376,6 +379,24 @@ function HandsRailButton() {
   )
 }
 
+function VoiceRailButton() {
+  const { enabled, setEnabled, supported } = useVoiceControl()
+  if (!supported) return null
+  return (
+    <Tooltip
+      content={enabled ? 'Turn off voice control' : 'Control the lab with your voice ("Hey Circuit")'}
+      relationship="label"
+    >
+      <Button
+        appearance={enabled ? 'primary' : 'subtle'}
+        icon={enabled ? <Mic24Filled /> : <Mic24Regular />}
+        onClick={() => setEnabled(!enabled)}
+        aria-label="Toggle voice control"
+      />
+    </Tooltip>
+  )
+}
+
 export function AppShell() {
   return (
     <GuidedProvider>
@@ -423,6 +444,7 @@ function AppShellInner() {
 
   return (
     <HandControlProvider>
+      <VoiceControlProvider>
       <div className={styles.root}>
       <nav className={styles.rail} aria-label="Primary">
         <div className={styles.brand}>
@@ -460,6 +482,7 @@ function AppShellInner() {
         </div>
 
         <div className={styles.railFooter}>
+          <VoiceRailButton />
           <HandsRailButton />
           <Tooltip
             content={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
@@ -492,7 +515,6 @@ function AppShellInner() {
           <span className={styles.badge}>
             <span className={styles.led} aria-hidden />
             <span className={styles.badgeText}>SYSTEM ONLINE</span>
-            <span className={styles.badgeMuted}>· 1ST&ndash;2ND YR</span>
           </span>
         </header>
 
@@ -583,6 +605,7 @@ function AppShellInner() {
         </div>
       </div>
       </div>
+      </VoiceControlProvider>
     </HandControlProvider>
   )
 }

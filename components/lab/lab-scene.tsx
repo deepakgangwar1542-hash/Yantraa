@@ -8,6 +8,8 @@ import { getComponent, type ShapeKind } from '@/lib/electronics-data'
 import { ComponentShape, getPinAnchors } from '@/components/lab/component-mesh'
 import type { CircuitReport, PlacedInstance, Wire, WireEnd } from '@/lib/circuit-engine'
 import { SIGNAL, COPPER, STATUS } from '@/lib/theme'
+import { handOrbit } from '@/lib/hand-orbit'
+import { pinRegistry, PIN_SNAP_PX, type PinScreenPos } from '@/lib/pin-registry'
 
 interface SceneProps {
   placed: PlacedInstance[]
@@ -19,13 +21,51 @@ interface SceneProps {
   report: CircuitReport
   pressedIds: ReadonlySet<string>
   onSelect: (id: string) => void
-  onPinClick: (instanceId: string, pinIndex: number) => void
+  onPinDown: (instanceId: string, pinIndex: number) => void
+  onPinUp: (instanceId: string, pinIndex: number) => void
   onMove: (id: string, pos: [number, number, number]) => void
   onRemove: (id: string) => void
   onDragStateChange: (dragging: boolean) => void
   onDeselect: () => void
   onDeleteWire: (id: string) => void
   onTogglePress: (id: string) => void
+}
+
+/**
+ * OrbitControls that only rotate when allowed: always for mouse users, but for
+ * hand control ONLY while a fist is held. This keeps the view perfectly stable
+ * while the user pinches to select pins and drag wires.
+ */
+function LabControls({ dragging }: { dragging: boolean }) {
+  const ref = React.useRef<React.ElementRef<typeof OrbitControls> | null>(null)
+
+  // Apply the rotate permission IMPERATIVELY so it lands in the same synchronous
+  // tick that the fist gesture dispatches its pointerdown. Driving enableRotate
+  // through React state would update a frame too late, so OrbitControls would
+  // still see enableRotate=false at pointerdown and the rotation would never
+  // start — which is exactly what made the fist-orbit gesture appear dead.
+  const apply = React.useCallback(() => {
+    const controls = ref.current as unknown as { enableRotate: boolean } | null
+    if (controls) controls.enableRotate = handOrbit.rotateAllowed()
+  }, [])
+
+  React.useEffect(() => {
+    apply()
+    return handOrbit.subscribe(apply)
+  }, [apply])
+
+  return (
+    <OrbitControls
+      ref={ref}
+      enabled={!dragging}
+      enableDamping
+      dampingFactor={0.08}
+      minDistance={4}
+      maxDistance={22}
+      maxPolarAngle={Math.PI / 2.15}
+      makeDefault
+    />
+  )
 }
 
 const DRAG_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
@@ -353,17 +393,25 @@ function WireTube({
 }
 
 /** Dashed guide line from the pending wire pin to the cursor position. */
-function PendingWirePreview({ from }: { from: Vec3 }) {
-  const { pointer, camera } = useThree()
+function PendingWirePreview({
+  from,
+  exclude,
+}: {
+  from: Vec3
+  exclude: { instanceId: string; pinIndex: number }
+}) {
+  const { pointer, camera, gl } = useThree()
   const raycaster = React.useMemo(() => new THREE.Raycaster(), [])
   const hit = React.useMemo(() => new THREE.Vector3(), [])
+  // Glowing marker shown at the pin the wire will snap to on release.
+  const snapRef = React.useRef<THREE.Mesh>(null)
   const line = React.useMemo(() => {
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3))
     const material = new THREE.LineBasicMaterial({
       color: '#f5b301',
       transparent: true,
-      opacity: 0.65,
+      opacity: 0.75,
       toneMapped: false,
     })
     return new THREE.Line(g, material)
@@ -372,11 +420,29 @@ function PendingWirePreview({ from }: { from: Vec3 }) {
   useFrame(() => {
     const attr = line.geometry.getAttribute('position') as THREE.BufferAttribute
     attr.setXYZ(0, from[0], from[1], from[2])
-    raycaster.setFromCamera(pointer, camera)
-    if (raycaster.ray.intersectPlane(DRAG_PLANE, hit)) {
-      attr.setXYZ(1, hit.x, Math.max(hit.y, 0), hit.z)
+
+    // Where is the cursor in client pixels? Convert the normalized pointer.
+    const rect = gl.domElement.getBoundingClientRect()
+    const cx = rect.left + ((pointer.x + 1) / 2) * rect.width
+    const cy = rect.top + ((1 - pointer.y) / 2) * rect.height
+
+    // Magnetic snap: if the cursor is near another pin, pull the wire endpoint
+    // straight to that pin's world anchor and light up the snap marker.
+    const near = pinRegistry.nearest(cx, cy, PIN_SNAP_PX, exclude)
+    if (near) {
+      attr.setXYZ(1, near.world[0], near.world[1], near.world[2])
+      if (snapRef.current) {
+        snapRef.current.visible = true
+        snapRef.current.position.set(near.world[0], near.world[1], near.world[2])
+      }
     } else {
-      attr.setXYZ(1, from[0], from[1], from[2])
+      raycaster.setFromCamera(pointer, camera)
+      if (raycaster.ray.intersectPlane(DRAG_PLANE, hit)) {
+        attr.setXYZ(1, hit.x, Math.max(hit.y, 0), hit.z)
+      } else {
+        attr.setXYZ(1, from[0], from[1], from[2])
+      }
+      if (snapRef.current) snapRef.current.visible = false
     }
     attr.needsUpdate = true
   })
@@ -389,7 +455,48 @@ function PendingWirePreview({ from }: { from: Vec3 }) {
     [line],
   )
 
-  return <primitive object={line} />
+  return (
+    <>
+      <primitive object={line} />
+      <mesh ref={snapRef} visible={false}>
+        <sphereGeometry args={[0.16, 16, 16]} />
+        <meshBasicMaterial color="#ffe27a" toneMapped={false} transparent opacity={0.95} />
+      </mesh>
+    </>
+  )
+}
+
+/**
+ * Projects every pin's world anchor to screen pixels each frame and publishes
+ * it to the pin registry, so the wiring flow can snap an imprecise hand cursor
+ * to the nearest pin. Only mounted in wire mode; clears the registry on unmount.
+ */
+function PinProjector({ placed }: { placed: PlacedInstance[] }) {
+  const { camera, gl } = useThree()
+  const v = React.useMemo(() => new THREE.Vector3(), [])
+
+  useFrame(() => {
+    const rect = gl.domElement.getBoundingClientRect()
+    const out: PinScreenPos[] = []
+    for (const inst of placed) {
+      const def = getComponent(inst.componentId)
+      if (!def) continue
+      const anchors = getPinAnchors(def.shape)
+      for (let i = 0; i < anchors.length; i++) {
+        const w = worldAnchor(inst.position, def.shape, i)
+        v.set(w[0], w[1], w[2]).project(camera)
+        // Skip pins behind the camera.
+        if (v.z > 1) continue
+        const x = rect.left + ((v.x + 1) / 2) * rect.width
+        const y = rect.top + ((1 - v.y) / 2) * rect.height
+        out.push({ instanceId: inst.instanceId, pinIndex: i, x, y, world: w })
+      }
+    }
+    pinRegistry.set(out)
+  })
+
+  React.useEffect(() => () => pinRegistry.clear(), [])
+  return null
 }
 
 function Draggable({
@@ -569,7 +676,8 @@ function Pins({
   showLabels,
   instanceId,
   pending,
-  onPinClick,
+  onPinDown,
+  onPinUp,
 }: {
   shape: ShapeKind
   names: string[]
@@ -577,7 +685,8 @@ function Pins({
   showLabels: boolean
   instanceId: string
   pending: WireEnd | null
-  onPinClick: (pinIndex: number) => void
+  onPinDown: (pinIndex: number) => void
+  onPinUp: (pinIndex: number) => void
 }) {
   const anchors = getPinAnchors(shape)
   const [hoveredIdx, setHoveredIdx] = React.useState<number | null>(null)
@@ -595,9 +704,15 @@ function Pins({
                 less precise than a mouse), so catch clicks within a generous
                 radius around the pad while the visible sphere stays tiny. */}
             <mesh
-              onClick={(e: ThreeEvent<MouseEvent>) => {
+              onPointerDown={(e: ThreeEvent<PointerEvent>) => {
+                if (!wireMode) return
                 e.stopPropagation()
-                if (wireMode) onPinClick(i)
+                onPinDown(i)
+              }}
+              onPointerUp={(e: ThreeEvent<PointerEvent>) => {
+                if (!wireMode) return
+                e.stopPropagation()
+                onPinUp(i)
               }}
               onPointerOver={
                 wireMode
@@ -644,9 +759,15 @@ function Pins({
                       ? 1.9
                       : 1
               }
-              onClick={(e: ThreeEvent<MouseEvent>) => {
+              onPointerDown={(e: ThreeEvent<PointerEvent>) => {
+                if (!wireMode) return
                 e.stopPropagation()
-                if (wireMode) onPinClick(i)
+                onPinDown(i)
+              }}
+              onPointerUp={(e: ThreeEvent<PointerEvent>) => {
+                if (!wireMode) return
+                e.stopPropagation()
+                onPinUp(i)
               }}
               onPointerOver={
                 wireMode
@@ -719,7 +840,8 @@ export function LabScene({
   report,
   pressedIds,
   onSelect,
-  onPinClick,
+  onPinDown,
+  onPinUp,
   onMove,
   onRemove,
   onDragStateChange,
@@ -812,6 +934,9 @@ export function LabScene({
         )
       })}
 
+      {/* Screen-space pin snapping (wire mode only) */}
+      {mode === 'wire' && <PinProjector placed={placed} />}
+
       {/* Pending wire guide line */}
       {mode === 'wire' &&
         pendingWire &&
@@ -820,7 +945,12 @@ export function LabScene({
           if (!inst) return null
           const def = getComponent(inst.componentId)
           if (!def) return null
-          return <PendingWirePreview from={worldAnchor(inst.position, def.shape, pendingWire.pinIndex)} />
+          return (
+            <PendingWirePreview
+              from={worldAnchor(inst.position, def.shape, pendingWire.pinIndex)}
+              exclude={{ instanceId: pendingWire.instanceId, pinIndex: pendingWire.pinIndex }}
+            />
+          )
         })()}
 
       {/* Components */}
@@ -860,7 +990,8 @@ export function LabScene({
                 showLabels={isSelected}
                 instanceId={inst.instanceId}
                 pending={pendingWire}
-                onPinClick={(pinIndex) => onPinClick(inst.instanceId, pinIndex)}
+                onPinDown={(pinIndex) => onPinDown(inst.instanceId, pinIndex)}
+                onPinUp={(pinIndex) => onPinUp(inst.instanceId, pinIndex)}
               />
               {isError && <SelectionRing color={STATUS.error} />}
               {isWarning && !isError && <SelectionRing color={STATUS.warning} />}
@@ -882,15 +1013,7 @@ export function LabScene({
         color="#000000"
       />
 
-      <OrbitControls
-        enabled={!dragging}
-        enableDamping
-        dampingFactor={0.08}
-        minDistance={4}
-        maxDistance={22}
-        maxPolarAngle={Math.PI / 2.15}
-        makeDefault
-      />
+      <LabControls dragging={dragging} />
     </Canvas>
   )
 }

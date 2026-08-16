@@ -351,9 +351,9 @@ function card(s, { x, y, w, h, fill = C.panel }) {
   s.addText(
     [
       { text: 'Drag & drop components', options: { bold: true, color: C.white } },
-      { text: '  onto a spatial breadboard.\n', options: { color: C.gray } },
+      { text: '  onto a spatial breadboard \u2014 or just say what you want.\n', options: { color: C.gray } },
       { text: 'Wire them in three dimensions', options: { bold: true, color: C.white } },
-      { text: '  with real, snapping jumper wires.\n', options: { color: C.gray } },
+      { text: '  with real jumper wires that magnetically snap to the nearest pin.\n', options: { color: C.gray } },
       { text: 'Press Run', options: { bold: true, color: C.white } },
       { text: '  and a live circuit engine simulates the result \u2014 LEDs light, buzzers sound, traces glow where current flows.\n', options: { color: C.gray } },
       { text: 'Instant fault detection', options: { bold: true, color: C.white } },
@@ -424,7 +424,7 @@ function card(s, { x, y, w, h, fill = C.panel }) {
 
   const cardW = (W - MX * 2 - 0.5) / 2
   // left card: AI tutor
-  card(s, { x: MX, y: 2.5, w: cardW, h: 3.6 })
+  card(s, { x: MX, y: 2.5, w: cardW, h: 3.9 })
   s.addText('THE AI TUTOR', { x: MX + 0.3, y: 2.75, w: cardW - 0.6, h: 0.35, fontFace: MONO, fontSize: 13, bold: true, color: C.red, charSpacing: 2 })
   s.addText(
     'Circuit is an always-on tutor that explains any concept \u2014 from Ohm\u2019s law to 555 timing chips \u2014 grounded in what you\u2019re actually building. Patient, precise, and context-aware.',
@@ -438,18 +438,19 @@ function card(s, { x, y, w, h, fill = C.panel }) {
 
   // right card: interaction modes
   const rx = MX + cardW + 0.5
-  card(s, { x: rx, y: 2.5, w: cardW, h: 3.6 })
-  s.addText('NEXT-LEVEL INTERACTION', { x: rx + 0.3, y: 2.75, w: cardW - 0.6, h: 0.35, fontFace: MONO, fontSize: 13, bold: true, color: C.red, charSpacing: 2 })
+  card(s, { x: rx, y: 2.5, w: cardW, h: 3.9 })
+  s.addText('NEXT-LEVEL INTERACTION', { x: rx + 0.3, y: 2.72, w: cardW - 0.6, h: 0.35, fontFace: MONO, fontSize: 13, bold: true, color: C.red, charSpacing: 2 })
   const feats = [
-    ['Hand-tracking control', 'Pinch, grab, and zoom the 3D lab with your webcam \u2014 no mouse required.'],
+    ['Voice assistant', 'Say \u201CHey Circuit, add a resistor and wire it to the LED\u201D \u2014 it places, connects, and runs it for you.'],
+    ['Hand-tracking control', 'Make a fist to orbit, two fingers to zoom, pinch to grab parts and snap wires \u2014 no mouse.'],
     ['Living-schematic UI', 'The whole app is a powered PCB: glow always means current is flowing.'],
     ['Runs in the browser', 'WebGL 3D + real-time simulation, zero installs, works on a laptop.'],
   ]
   feats.forEach((f, i) => {
-    const y = 3.25 + i * 0.92
+    const y = 3.15 + i * 0.78
     s.addShape('ellipse', { x: rx + 0.3, y: y + 0.05, w: 0.16, h: 0.16, fill: { color: C.green } })
-    s.addText(f[0], { x: rx + 0.62, y, w: cardW - 0.9, h: 0.3, fontFace: FONT, fontSize: 15, bold: true, color: C.white })
-    s.addText(f[1], { x: rx + 0.62, y: y + 0.32, w: cardW - 0.9, h: 0.55, fontFace: FONT, fontSize: 12.5, color: C.gray, lineSpacingMultiple: 1.1 })
+    s.addText(f[0], { x: rx + 0.62, y, w: cardW - 0.9, h: 0.3, fontFace: FONT, fontSize: 14.5, bold: true, color: C.white })
+    s.addText(f[1], { x: rx + 0.62, y: y + 0.3, w: cardW - 0.9, h: 0.5, fontFace: FONT, fontSize: 11.5, color: C.gray, lineSpacingMultiple: 1.05 })
   })
 }
 
@@ -550,7 +551,7 @@ function card(s, { x, y, w, h, fill = C.panel }) {
     ['3D ENGINE', 'React Three Fiber + WebGL render the spatial lab. A single shared WebGL context keeps it fast and stable.'],
     ['CIRCUIT ENGINE', 'A custom real-time solver detects closed loops, current flow, shorts, and polarity faults on every edit.'],
     ['AI TUTOR', 'Streaming LLM responses via the AI SDK, grounded in the live circuit state for context-aware help.'],
-    ['HAND TRACKING', 'Webcam gesture recognition drives pinch / grab / zoom \u2014 a natural, mouse-free interface.'],
+    ['GESTURE & VOICE', 'Webcam gestures (fist-orbit, pinch-to-wire) and a \u201CHey Circuit\u201D voice assistant drive the lab hands-free.'],
     ['NEXT.JS + FLUENT UI', 'App Router front end with a cohesive PCB design system and persisted project progress.'],
     ['ZERO INSTALL', 'Everything runs client-side in the browser \u2014 no hardware, no setup, works on any laptop.'],
   ]
@@ -589,9 +590,9 @@ function card(s, { x, y, w, h, fill = C.panel }) {
     ]],
     ['SIMULATION & AI', C.hot, [
       'Custom circuit engine',
-      'Vercel AI SDK',
-      'Groq LLM (streaming)',
+      'Vercel AI SDK + Groq',
       'MediaPipe hand tracking',
+      'Web Speech voice control',
     ]],
     ['PLATFORM', C.green, [
       'Vercel hosting',
@@ -638,7 +639,7 @@ function card(s, { x, y, w, h, fill = C.panel }) {
   // audience column
   s.addText('BUILT FOR', { x: MX, y: 2.5, w: 5, h: 0.35, fontFace: MONO, fontSize: 13, bold: true, color: C.red, charSpacing: 2 })
   const who = [
-    '1st & 2nd year engineering students',
+    'Engineering students & beginners',
     'Self-taught makers & hobbyists',
     'Classrooms without lab budgets',
     'Anyone intimidated by real hardware',
