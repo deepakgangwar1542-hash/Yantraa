@@ -432,10 +432,7 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
   const pressStartPosRef = React.useRef({ x: 0, y: 0 })
   const pressMovedRef = React.useRef(false)
   const pressTargetRef = React.useRef<Element | null>(null)
-  // A latched grab: after pinch-and-move on the canvas, the component stays held
-  // and follows the hand until a double-pinch releases it.
-  const grabbedRef = React.useRef(false)
-  const pinchTimesRef = React.useRef<number[]>([])
+
 
   /* ---- main loop -------------------------------------------------- */
   React.useEffect(() => {
@@ -668,23 +665,10 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
       }
       endOrbit()
 
-      // Baseline hover / drag move. Button reflects an active grab or press so a
-      // latched component keeps following the hand.
-      const buttons = grabbedRef.current || pressActiveRef.current ? 1 : 0
+      // Baseline hover / drag move. While a pinch is held the button stays down
+      // so a component drag or a wire drag follows the hand continuously.
+      const buttons = pressActiveRef.current ? 1 : 0
       dispatchPointer('pointermove', x, y, buttons, hovering)
-
-      /* ---------- GRABBED: component follows hand until double-pinch --- */
-      if (grabbedRef.current) {
-        if (pinchRise) {
-          const now = performance.now()
-          pinchTimesRef.current = [...pinchTimesRef.current, now].filter(
-            (t) => now - t < DOUBLE_PINCH_MS,
-          )
-          // "Pinch twice" to release and deselect.
-          if (pinchTimesRef.current.length >= 2) dropGrab(x, y, hovering)
-        }
-        return
-      }
 
       /* ---------- ZOOM: open / close the hand (not a tight fist) ------- */
       if (!p.pinch && !p.scroll && !pressActiveRef.current) {
@@ -724,7 +708,12 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
         lastScrollYRef.current = null
       }
 
-      /* ---------- PINCH: click, pin-connect, or latch into a grab ----- */
+      /* ---------- PINCH: press → drag → release ----------------------
+       * A pinch is a real pointer press. Hold and move to drag a component
+       * (move mode) or pull a wire from one pin to another (wire mode); the
+       * matching pin's pointerup verifies and lays the jumper. A pinch that
+       * doesn't move is a plain click (select / press a button).
+       */
       if (pinchRise && !pressActiveRef.current) {
         pressActiveRef.current = true
         pressMovedRef.current = false
@@ -733,32 +722,31 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
         dispatchPointer('pointerdown', x, y, 1, hovering)
         setDown(true)
       } else if (pinchFall && pressActiveRef.current) {
-        const onCanvas = !!canvasAt(x, y)
-        if (pressMovedRef.current && onCanvas) {
-          // Pinched a component and moved it → latch. It now follows the hand
-          // (pinch can relax) until a double-pinch drops it. Camera stays locked.
-          grabbedRef.current = true
-          pressActiveRef.current = false
-          pinchTimesRef.current = []
-        } else {
-          // A tap: click / connect a pin / press a button.
-          dispatchPointer('pointerup', x, y, 0, hovering)
-          dispatchClick(x, y, pressTargetRef.current)
-          pressActiveRef.current = false
-          setDown(false)
-          setFlash((f) => f + 1)
-        }
+        pressActiveRef.current = false
+        dispatchPointer('pointerup', x, y, 0, hovering)
+        // Only synthesize a click when the hand stayed put — a drag already
+        // delivered its own down/move/up to the pin or component.
+        if (!pressMovedRef.current) dispatchClick(x, y, pressTargetRef.current)
+        setDown(false)
+        setFlash((f) => f + 1)
       } else if (p.pinch && pressActiveRef.current) {
-        // Holding: track travel so we know whether this becomes a grab.
+        // Holding: once the hand travels past the tap threshold it's a drag.
         const sp = pressStartPosRef.current
-        if (Math.hypot(p.x - sp.x / window.innerWidth, p.y - sp.y / window.innerHeight) > GRAB_MOVE) {
+        if (
+          Math.hypot(p.x - sp.x / window.innerWidth, p.y - sp.y / window.innerHeight) > TAP_MOVE
+        ) {
           pressMovedRef.current = true
         }
       }
     }
 
     const interval = window.setInterval(step, 33)
-    return () => window.clearInterval(interval)
+    return () => {
+      window.clearInterval(interval)
+      // Hand control is off — restore normal (mouse) camera behavior.
+      handOrbit.setOrbitGesture(false)
+      handOrbit.setHandActive(false)
+    }
   }, [enabled])
 
   // Feed the camera stream into both the hidden detection video and the PiP preview.
@@ -932,8 +920,8 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
                 ? pose.fist
                   ? 'Fist — move to orbit the view'
                   : pose.pinch
-                    ? 'Pinch — select / drag · pinch twice to drop'
-                    : 'Fist orbits · open / close zooms · pinch selects & drags'
+                    ? 'Pinch held — drag to move parts or pull a wire'
+                    : 'Fist orbits · open / close zooms · pinch a pin & drag to wire'
                 : 'Move your hand into view'}
             </Text>
           </div>
