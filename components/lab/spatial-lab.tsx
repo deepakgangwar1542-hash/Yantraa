@@ -45,6 +45,7 @@ import {
   resolvePinIndex,
   type LabAction,
 } from '@/lib/lab-actions'
+import { pinRegistry, PIN_SNAP_PX } from '@/lib/pin-registry'
 import { useGuided } from '@/lib/guided-context'
 import { evaluateProgress } from '@/lib/projects'
 import { PCB, MONO_STACK, GLOW, STATUS } from '@/lib/theme'
@@ -325,6 +326,9 @@ export function SpatialLab() {
   const pendingRef = React.useRef<WireEnd | null>(null)
   pendingRef.current = pendingWire
   const pinPressRef = React.useRef<{ instanceId: string; pinIndex: number; started: boolean } | null>(null)
+  // Timestamp of the last EXACT pin raycast hit. The screen-space snap fallback
+  // uses it to tell whether a press/release already landed on a real pin.
+  const pinHitAtRef = React.useRef(0)
 
   // ---- Guided "Build Path" mode -----------------------------------------
   // The Build Path reuses this single lab instance so we never open a second
@@ -442,6 +446,7 @@ export function SpatialLab() {
     (instanceId: string, pinIndex: number) => {
       setSelectedId(instanceId)
       if (mode !== 'wire') return
+      pinHitAtRef.current = performance.now()
       const started = !pendingRef.current
       if (started) {
         pendingRef.current = { instanceId, pinIndex }
@@ -458,6 +463,7 @@ export function SpatialLab() {
   const handlePinUp = React.useCallback(
     (instanceId: string, pinIndex: number) => {
       if (mode !== 'wire') return
+      pinHitAtRef.current = performance.now()
       const pending = pendingRef.current
       const press = pinPressRef.current
       pinPressRef.current = null
@@ -479,6 +485,73 @@ export function SpatialLab() {
     },
     [mode, connectWire],
   )
+
+  // Screen-space snapping fallback for imprecise (hand-tracking) cursors. If a
+  // press/release did NOT land on a real pin, snap to the NEAREST pin within a
+  // pixel radius: arm it on press, or complete the jumper on release. The exact
+  // R3F pin raycast still wins for a precise mouse; this only fills the gaps.
+  React.useEffect(() => {
+    if (mode !== 'wire') return
+    const EXACT_MS = 60 // a real pin hit this recent means the exact path handled it
+
+    const onDown = (e: PointerEvent) => {
+      const { clientX, clientY } = e
+      requestAnimationFrame(() => {
+        if (performance.now() - pinHitAtRef.current < EXACT_MS) return
+        if (pendingRef.current) return
+        const near = pinRegistry.nearest(clientX, clientY, PIN_SNAP_PX, null)
+        if (!near) return
+        pendingRef.current = { instanceId: near.instanceId, pinIndex: near.pinIndex }
+        setPendingWire(pendingRef.current)
+        setSelectedId(near.instanceId)
+        pinPressRef.current = {
+          instanceId: near.instanceId,
+          pinIndex: near.pinIndex,
+          started: true,
+        }
+      })
+    }
+
+    const onUp = (e: PointerEvent) => {
+      const { clientX, clientY } = e
+      requestAnimationFrame(() => {
+        if (performance.now() - pinHitAtRef.current < EXACT_MS) return
+        const pending = pendingRef.current
+        if (!pending) return
+        const press = pinPressRef.current
+        pinPressRef.current = null
+
+        // If the release is still on/near the ARMED pin, this was a tap in place,
+        // not a drag to another pin. Keep it armed if we just armed it this press
+        // (so a lone tap starts a jumper); otherwise a deliberate re-tap cancels.
+        // This mirrors the exact-hit path and prevents a single tap from snapping
+        // to the OTHER pin of the same part and shorting it.
+        const armed = pinRegistry
+          .all()
+          .find((p) => p.instanceId === pending.instanceId && p.pinIndex === pending.pinIndex)
+        if (armed && Math.hypot(armed.x - clientX, armed.y - clientY) < PIN_SNAP_PX) {
+          if (press?.started) return // just armed this press → keep it armed
+          pendingRef.current = null // re-tap on the armed pin → cancel
+          setPendingWire(null)
+          return
+        }
+
+        // Released away from the armed pin → complete to the nearest other pin.
+        const near = pinRegistry.nearest(clientX, clientY, PIN_SNAP_PX, pending)
+        if (!near) return
+        connectWire(pending, { instanceId: near.instanceId, pinIndex: near.pinIndex })
+        pendingRef.current = null
+        setPendingWire(null)
+      })
+    }
+
+    window.addEventListener('pointerdown', onDown)
+    window.addEventListener('pointerup', onUp)
+    return () => {
+      window.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('pointerup', onUp)
+    }
+  }, [mode, connectWire])
 
   const deleteWire = React.useCallback((id: string) => {
     setWires((prev) => prev.filter((w) => w.id !== id))

@@ -9,6 +9,7 @@ import { ComponentShape, getPinAnchors } from '@/components/lab/component-mesh'
 import type { CircuitReport, PlacedInstance, Wire, WireEnd } from '@/lib/circuit-engine'
 import { SIGNAL, COPPER, STATUS } from '@/lib/theme'
 import { handOrbit } from '@/lib/hand-orbit'
+import { pinRegistry, PIN_SNAP_PX, type PinScreenPos } from '@/lib/pin-registry'
 
 interface SceneProps {
   placed: PlacedInstance[]
@@ -392,17 +393,25 @@ function WireTube({
 }
 
 /** Dashed guide line from the pending wire pin to the cursor position. */
-function PendingWirePreview({ from }: { from: Vec3 }) {
-  const { pointer, camera } = useThree()
+function PendingWirePreview({
+  from,
+  exclude,
+}: {
+  from: Vec3
+  exclude: { instanceId: string; pinIndex: number }
+}) {
+  const { pointer, camera, gl } = useThree()
   const raycaster = React.useMemo(() => new THREE.Raycaster(), [])
   const hit = React.useMemo(() => new THREE.Vector3(), [])
+  // Glowing marker shown at the pin the wire will snap to on release.
+  const snapRef = React.useRef<THREE.Mesh>(null)
   const line = React.useMemo(() => {
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3))
     const material = new THREE.LineBasicMaterial({
       color: '#f5b301',
       transparent: true,
-      opacity: 0.65,
+      opacity: 0.75,
       toneMapped: false,
     })
     return new THREE.Line(g, material)
@@ -411,11 +420,29 @@ function PendingWirePreview({ from }: { from: Vec3 }) {
   useFrame(() => {
     const attr = line.geometry.getAttribute('position') as THREE.BufferAttribute
     attr.setXYZ(0, from[0], from[1], from[2])
-    raycaster.setFromCamera(pointer, camera)
-    if (raycaster.ray.intersectPlane(DRAG_PLANE, hit)) {
-      attr.setXYZ(1, hit.x, Math.max(hit.y, 0), hit.z)
+
+    // Where is the cursor in client pixels? Convert the normalized pointer.
+    const rect = gl.domElement.getBoundingClientRect()
+    const cx = rect.left + ((pointer.x + 1) / 2) * rect.width
+    const cy = rect.top + ((1 - pointer.y) / 2) * rect.height
+
+    // Magnetic snap: if the cursor is near another pin, pull the wire endpoint
+    // straight to that pin's world anchor and light up the snap marker.
+    const near = pinRegistry.nearest(cx, cy, PIN_SNAP_PX, exclude)
+    if (near) {
+      attr.setXYZ(1, near.world[0], near.world[1], near.world[2])
+      if (snapRef.current) {
+        snapRef.current.visible = true
+        snapRef.current.position.set(near.world[0], near.world[1], near.world[2])
+      }
     } else {
-      attr.setXYZ(1, from[0], from[1], from[2])
+      raycaster.setFromCamera(pointer, camera)
+      if (raycaster.ray.intersectPlane(DRAG_PLANE, hit)) {
+        attr.setXYZ(1, hit.x, Math.max(hit.y, 0), hit.z)
+      } else {
+        attr.setXYZ(1, from[0], from[1], from[2])
+      }
+      if (snapRef.current) snapRef.current.visible = false
     }
     attr.needsUpdate = true
   })
@@ -428,7 +455,48 @@ function PendingWirePreview({ from }: { from: Vec3 }) {
     [line],
   )
 
-  return <primitive object={line} />
+  return (
+    <>
+      <primitive object={line} />
+      <mesh ref={snapRef} visible={false}>
+        <sphereGeometry args={[0.16, 16, 16]} />
+        <meshBasicMaterial color="#ffe27a" toneMapped={false} transparent opacity={0.95} />
+      </mesh>
+    </>
+  )
+}
+
+/**
+ * Projects every pin's world anchor to screen pixels each frame and publishes
+ * it to the pin registry, so the wiring flow can snap an imprecise hand cursor
+ * to the nearest pin. Only mounted in wire mode; clears the registry on unmount.
+ */
+function PinProjector({ placed }: { placed: PlacedInstance[] }) {
+  const { camera, gl } = useThree()
+  const v = React.useMemo(() => new THREE.Vector3(), [])
+
+  useFrame(() => {
+    const rect = gl.domElement.getBoundingClientRect()
+    const out: PinScreenPos[] = []
+    for (const inst of placed) {
+      const def = getComponent(inst.componentId)
+      if (!def) continue
+      const anchors = getPinAnchors(def.shape)
+      for (let i = 0; i < anchors.length; i++) {
+        const w = worldAnchor(inst.position, def.shape, i)
+        v.set(w[0], w[1], w[2]).project(camera)
+        // Skip pins behind the camera.
+        if (v.z > 1) continue
+        const x = rect.left + ((v.x + 1) / 2) * rect.width
+        const y = rect.top + ((1 - v.y) / 2) * rect.height
+        out.push({ instanceId: inst.instanceId, pinIndex: i, x, y, world: w })
+      }
+    }
+    pinRegistry.set(out)
+  })
+
+  React.useEffect(() => () => pinRegistry.clear(), [])
+  return null
 }
 
 function Draggable({
@@ -866,6 +934,9 @@ export function LabScene({
         )
       })}
 
+      {/* Screen-space pin snapping (wire mode only) */}
+      {mode === 'wire' && <PinProjector placed={placed} />}
+
       {/* Pending wire guide line */}
       {mode === 'wire' &&
         pendingWire &&
@@ -874,7 +945,12 @@ export function LabScene({
           if (!inst) return null
           const def = getComponent(inst.componentId)
           if (!def) return null
-          return <PendingWirePreview from={worldAnchor(inst.position, def.shape, pendingWire.pinIndex)} />
+          return (
+            <PendingWirePreview
+              from={worldAnchor(inst.position, def.shape, pendingWire.pinIndex)}
+              exclude={{ instanceId: pendingWire.instanceId, pinIndex: pendingWire.pinIndex }}
+            />
+          )
         })()}
 
       {/* Components */}
