@@ -8,16 +8,15 @@ import {
   tokens,
   Textarea,
   Button,
+  Tooltip,
   Title2,
   Body1,
   Caption1,
-  Spinner,
   Avatar,
   MessageBar,
   MessageBarBody,
   MessageBarTitle,
   MessageBarActions,
-  Link,
 } from '@fluentui/react-components'
 import {
   Send24Filled,
@@ -25,7 +24,14 @@ import {
   Person24Regular,
   Lightbulb20Regular,
   Stop24Filled,
+  Mic24Filled,
+  Mic24Regular,
+  Speaker224Filled,
+  Speaker224Regular,
 } from '@fluentui/react-icons'
+import { ChatMarkdown, messageText } from '@/components/assistant/chat-markdown'
+import { useSpeechRecognition, useSpeechSynthesis } from '@/lib/speech'
+import { SIGNAL, GLOW, MONO_STACK, EASE_ELECTRIC } from '@/lib/theme'
 
 const SUGGESTIONS = [
   'What is Ohm\u2019s Law and why do I need it?',
@@ -66,14 +72,26 @@ const useStyles = makeStyles({
     paddingTop: tokens.spacingVerticalXXL,
     paddingBottom: tokens.spacingVerticalL,
   },
+  // IC-chip brand mark: dark package, signal-red die, breathing glow + pin rails.
   heroMark: {
+    position: 'relative',
     display: 'grid',
     placeItems: 'center',
     width: '64px',
     height: '64px',
-    borderRadius: tokens.borderRadiusXLarge,
-    color: tokens.colorNeutralForegroundOnBrand,
-    background: `linear-gradient(135deg, ${tokens.colorBrandBackground}, ${tokens.colorPaletteTealBackground2})`,
+    borderRadius: '8px',
+    color: '#fff',
+    border: `1px solid ${SIGNAL.red}`,
+    backgroundColor: '#141416',
+    backgroundImage: `radial-gradient(circle at 50% 45%, rgba(255,45,45,0.55), rgba(255,45,45,0.08) 60%, transparent 72%)`,
+    boxShadow: GLOW.md,
+    animationName: 'trace-pulse',
+    animationDuration: '3.6s',
+    animationIterationCount: 'infinite',
+    animationTimingFunction: 'ease-in-out',
+    '@media (prefers-reduced-motion: reduce)': {
+      animationName: 'none',
+    },
   },
   suggestions: {
     display: 'grid',
@@ -101,8 +119,42 @@ const useStyles = makeStyles({
     transitionProperty: 'background-color, border-color, transform',
     ':hover': {
       backgroundColor: tokens.colorNeutralBackground1Hover,
-      border: `1px solid ${tokens.colorBrandStroke1}`,
+      borderTopColor: SIGNAL.red,
+      borderRightColor: SIGNAL.red,
+      borderBottomColor: SIGNAL.red,
+      borderLeftColor: SIGNAL.red,
       transform: 'translateY(-2px)',
+    },
+  },
+  // "Current flowing" thinking indicator — dots pulse along a trace.
+  thinking: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    height: '20px',
+    fontFamily: MONO_STACK,
+    fontSize: '11px',
+    letterSpacing: '0.12em',
+    textTransform: 'uppercase',
+    color: tokens.colorNeutralForeground3,
+  },
+  thinkingDots: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '5px',
+  },
+  thinkingDot: {
+    width: '7px',
+    height: '7px',
+    borderRadius: '50%',
+    backgroundColor: SIGNAL.red,
+    animationName: 'trace-pulse',
+    animationDuration: '1.1s',
+    animationIterationCount: 'infinite',
+    animationTimingFunction: EASE_ELECTRIC,
+    '@media (prefers-reduced-motion: reduce)': {
+      animationName: 'none',
+      opacity: 0.7,
     },
   },
   row: {
@@ -121,25 +173,32 @@ const useStyles = makeStyles({
     borderRadius: tokens.borderRadiusXLarge,
     maxWidth: '100%',
   },
+  // Student message: energized signal-red with a soft current glow.
   bubbleUser: {
-    backgroundColor: tokens.colorBrandBackground,
-    color: tokens.colorNeutralForegroundOnBrand,
+    backgroundColor: SIGNAL.red,
+    color: '#fff',
     borderBottomRightRadius: tokens.borderRadiusSmall,
+    boxShadow: GLOW.sm,
   },
+  // Tutor message: matte PCB panel with a faint red-tinted trace border.
   bubbleAssistant: {
     backgroundColor: tokens.colorNeutralBackground1,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    border: `1px solid rgba(255,70,58,0.16)`,
     borderBottomLeftRadius: tokens.borderRadiusSmall,
   },
+  // Tutor avatar as a small IC chip.
   botAvatar: {
     display: 'grid',
     placeItems: 'center',
     flexShrink: 0,
     width: '32px',
     height: '32px',
-    borderRadius: tokens.borderRadiusCircular,
-    color: tokens.colorNeutralForegroundOnBrand,
-    background: `linear-gradient(135deg, ${tokens.colorBrandBackground}, ${tokens.colorPaletteTealBackground2})`,
+    borderRadius: '6px',
+    color: '#fff',
+    border: `1px solid ${SIGNAL.red}`,
+    backgroundColor: '#141416',
+    backgroundImage: `radial-gradient(circle at 50% 45%, rgba(255,45,45,0.5), transparent 72%)`,
+    boxShadow: GLOW.sm,
   },
   composer: {
     borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
@@ -160,27 +219,26 @@ const useStyles = makeStyles({
   textarea: {
     flexGrow: 1,
   },
-  // markdown-ish text
-  md: {
+  listeningHint: {
+    maxWidth: '780px',
+    marginLeft: 'auto',
+    marginRight: 'auto',
     display: 'flex',
-    flexDirection: 'column',
-    gap: tokens.spacingVerticalS,
-    fontSize: tokens.fontSizeBase300,
-    lineHeight: tokens.lineHeightBase300,
-  },
-  mdHeading: {
-    fontWeight: tokens.fontWeightSemibold,
-    fontSize: tokens.fontSizeBase400,
-    marginTop: tokens.spacingVerticalXS,
-  },
-  bullet: {
-    display: 'flex',
-    gap: tokens.spacingHorizontalS,
-    paddingLeft: tokens.spacingHorizontalXS,
-  },
-  dot: {
+    alignItems: 'center',
+    gap: tokens.spacingHorizontalXS,
     color: tokens.colorBrandForeground1,
-    fontWeight: tokens.fontWeightBold,
+    paddingBottom: tokens.spacingVerticalXS,
+  },
+  micLive: {
+    animationName: {
+      '0%, 100%': { opacity: 1 },
+      '50%': { opacity: 0.35 },
+    },
+    animationDuration: '1.1s',
+    animationIterationCount: 'infinite',
+    '@media (prefers-reduced-motion: reduce)': {
+      animationName: 'none',
+    },
   },
   disclaimer: {
     textAlign: 'center',
@@ -189,66 +247,22 @@ const useStyles = makeStyles({
   },
 })
 
-function renderInline(text: string, key: React.Key) {
-  // bold **text**
-  const parts = text.split(/(\*\*[^*]+\*\*)/g)
+/** Branded "thinking" readout: three dots pulsing like current on a trace. */
+function TraceThinking({ className, dotClassName, dotsClassName }: {
+  className: string
+  dotsClassName: string
+  dotClassName: string
+}) {
   return (
-    <span key={key}>
-      {parts.map((p, i) =>
-        p.startsWith('**') && p.endsWith('**') ? (
-          <strong key={i}>{p.slice(2, -2)}</strong>
-        ) : (
-          <React.Fragment key={i}>{p}</React.Fragment>
-        ),
-      )}
+    <span className={className} role="status" aria-label="Circuit is thinking">
+      <span aria-hidden>Analyzing</span>
+      <span className={dotsClassName} aria-hidden>
+        <span className={dotClassName} style={{ animationDelay: '0ms' }} />
+        <span className={dotClassName} style={{ animationDelay: '160ms' }} />
+        <span className={dotClassName} style={{ animationDelay: '320ms' }} />
+      </span>
     </span>
   )
-}
-
-function Markdownish({ text, classes }: { text: string; classes: ReturnType<typeof useStyles> }) {
-  const lines = text.split('\n')
-  return (
-    <div className={classes.md}>
-      {lines.map((raw, i) => {
-        const line = raw.trimEnd()
-        if (!line.trim()) return null
-        const heading = line.match(/^#{1,3}\s+(.*)/)
-        if (heading) {
-          return (
-            <div key={i} className={classes.mdHeading}>
-              {renderInline(heading[1], i)}
-            </div>
-          )
-        }
-        const bullet = line.match(/^\s*[-*]\s+(.*)/)
-        if (bullet) {
-          return (
-            <div key={i} className={classes.bullet}>
-              <span className={classes.dot}>&bull;</span>
-              <span>{renderInline(bullet[1], i)}</span>
-            </div>
-          )
-        }
-        const numbered = line.match(/^\s*(\d+)\.\s+(.*)/)
-        if (numbered) {
-          return (
-            <div key={i} className={classes.bullet}>
-              <span className={classes.dot}>{numbered[1]}.</span>
-              <span>{renderInline(numbered[2], i)}</span>
-            </div>
-          )
-        }
-        return <div key={i}>{renderInline(line, i)}</div>
-      })}
-    </div>
-  )
-}
-
-function messageText(message: { parts: Array<{ type: string; text?: string }> }) {
-  return message.parts
-    .filter((p) => p.type === 'text')
-    .map((p) => p.text ?? '')
-    .join('')
 }
 
 export function InstructorChat() {
@@ -260,19 +274,61 @@ export function InstructorChat() {
   const scrollRef = React.useRef<HTMLDivElement>(null)
   const busy = status === 'submitted' || status === 'streaming'
 
+  // Speech: mic input + speak-aloud output.
+  const {
+    supported: micSupported,
+    listening,
+    interim,
+    toggle: toggleMic,
+    stop: stopMic,
+  } = useSpeechRecognition((text) =>
+    setInput((prev) => (prev ? `${prev.trim()} ${text}` : text)),
+  )
+  const { supported: ttsSupported, speak, cancel: cancelSpeech } = useSpeechSynthesis()
+  const [speakOn, setSpeakOn] = React.useState(false)
+  const lastSpokenRef = React.useRef<string | null>(null)
+
   React.useEffect(() => {
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [messages, status])
 
+  // Speak newly completed assistant answers when speak-aloud is on.
+  React.useEffect(() => {
+    if (!speakOn || !ttsSupported || busy) return
+    const last = messages[messages.length - 1]
+    if (!last || last.role !== 'assistant') return
+    if (lastSpokenRef.current === last.id) return
+    const text = messageText(last)
+    if (!text) return
+    lastSpokenRef.current = last.id
+    speak(text)
+  }, [messages, busy, speakOn, ttsSupported, speak])
+
+  const toggleSpeak = React.useCallback(() => {
+    setSpeakOn((on) => {
+      const next = !on
+      if (!next) {
+        cancelSpeech()
+      } else {
+        // Don't replay history: treat the latest answer as already spoken.
+        const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant')
+        lastSpokenRef.current = lastAssistant?.id ?? null
+      }
+      return next
+    })
+  }, [messages, cancelSpeech])
+
   const submit = React.useCallback(
     (text: string) => {
       const trimmed = text.trim()
       if (!trimmed || busy) return
+      if (listening) stopMic()
+      cancelSpeech()
       sendMessage({ text: trimmed })
       setInput('')
     },
-    [busy, sendMessage],
+    [busy, sendMessage, listening, stopMic, cancelSpeech],
   )
 
   return (
@@ -287,7 +343,7 @@ export function InstructorChat() {
               <Title2>Meet Circuit, your hardware tutor</Title2>
               <Body1 style={{ color: tokens.colorNeutralForeground3, maxWidth: '520px' }}>
                 Ask anything about electronic components, from the very basics to advanced theory.
-                No question is too simple. Pick a starter below or type your own.
+                Type or use the mic, in any language. No question is too simple.
               </Body1>
               <div className={styles.suggestions}>
                 {SUGGESTIONS.map((s) => (
@@ -333,9 +389,13 @@ export function InstructorChat() {
                   >
                     {isUser ? <Body1 style={{ color: 'inherit' }}>{text}</Body1> : (
                       text ? (
-                        <Markdownish text={text} classes={styles} />
+                        <ChatMarkdown text={text} />
                       ) : (
-                        <Spinner size="tiny" label={'Thinking\u2026'} />
+                        <TraceThinking
+                          className={styles.thinking}
+                          dotsClassName={styles.thinkingDots}
+                          dotClassName={styles.thinkingDot}
+                        />
                       )
                     )}
                   </div>
@@ -349,59 +409,71 @@ export function InstructorChat() {
                 <BrainCircuit24Filled fontSize={18} />
               </span>
               <div className={`${styles.bubble} ${styles.bubbleAssistant}`}>
-                <Spinner size="tiny" label={'Thinking\u2026'} />
+                <TraceThinking
+                  className={styles.thinking}
+                  dotsClassName={styles.thinkingDots}
+                  dotClassName={styles.thinkingDot}
+                />
               </div>
             </div>
           )}
 
-          {error && !busy && (() => {
-            const msg = error.message || 'Something went wrong contacting the tutor.'
-            const needsCard = /credit card/i.test(msg)
-            const linkMatch = msg.match(/https?:\/\/\S+/)
-            return (
-              <MessageBar intent="error" layout="multiline">
-                <MessageBarBody>
-                  <MessageBarTitle>
-                    {needsCard
-                      ? 'AI tutor is not activated yet'
-                      : 'Circuit could not respond'}
-                  </MessageBarTitle>
-                  {needsCard ? (
-                    <>
-                      {'The AI Gateway needs a valid credit card on file to unlock your free credits. '}
-                      {linkMatch ? (
-                        <Link href={linkMatch[0]} target="_blank" rel="noreferrer">
-                          Add a card to activate the tutor
-                        </Link>
-                      ) : null}
-                      {'. This is a one-time setup and no charge is made until you exceed the free credits.'}
-                    </>
-                  ) : (
-                    msg
-                  )}
-                </MessageBarBody>
-                <MessageBarActions>
-                  <Button
-                    appearance="transparent"
-                    size="small"
-                    onClick={() => regenerate()}
-                  >
-                    Try again
-                  </Button>
-                </MessageBarActions>
-              </MessageBar>
-            )
-          })()}
+          {error && !busy && (
+            <MessageBar intent="error" layout="multiline">
+              <MessageBarBody>
+                <MessageBarTitle
+                  style={{ fontFamily: MONO_STACK, letterSpacing: '0.08em' }}
+                >
+                  ERR · NO RESPONSE
+                </MessageBarTitle>
+                {error.message || 'Something went wrong contacting the tutor. Please try again.'}
+              </MessageBarBody>
+              <MessageBarActions>
+                <Button
+                  appearance="transparent"
+                  size="small"
+                  onClick={() => regenerate()}
+                >
+                  Try again
+                </Button>
+              </MessageBarActions>
+            </MessageBar>
+          )}
         </div>
       </div>
 
       <div className={styles.composer}>
+        {listening && (
+          <Caption1 as="p" className={styles.listeningHint}>
+            <Mic24Filled fontSize={16} className={styles.micLive} />
+            {interim ? interim : 'Listening\u2026 speak now'}
+          </Caption1>
+        )}
         <div className={styles.composerInner}>
+          <Tooltip
+            content={
+              !ttsSupported
+                ? 'Speak-aloud is not supported in this browser'
+                : speakOn
+                  ? 'Turn off speak-aloud'
+                  : 'Speak answers aloud'
+            }
+            relationship="label"
+          >
+            <Button
+              appearance={speakOn ? 'primary' : 'subtle'}
+              icon={speakOn ? <Speaker224Filled /> : <Speaker224Regular />}
+              onClick={toggleSpeak}
+              disabled={!ttsSupported}
+              aria-label="Toggle speak answers aloud"
+              aria-pressed={speakOn}
+            />
+          </Tooltip>
           <Textarea
             className={styles.textarea}
             value={input}
             resize="vertical"
-            placeholder={'Ask Circuit about any component or concept\u2026'}
+            placeholder={'Ask Circuit in any language\u2026'}
             onChange={(_, data) => setInput(data.value)}
             onKeyDown={(e) => {
               if (
@@ -415,6 +487,25 @@ export function InstructorChat() {
               }
             }}
           />
+          <Tooltip
+            content={
+              !micSupported
+                ? 'Microphone input is not supported in this browser'
+                : listening
+                  ? 'Stop listening'
+                  : 'Speak your question'
+            }
+            relationship="label"
+          >
+            <Button
+              appearance={listening ? 'primary' : 'subtle'}
+              icon={listening ? <Mic24Filled /> : <Mic24Regular />}
+              onClick={toggleMic}
+              disabled={!micSupported}
+              aria-label="Toggle microphone input"
+              aria-pressed={listening}
+            />
+          </Tooltip>
           {busy ? (
             <Button
               appearance="secondary"

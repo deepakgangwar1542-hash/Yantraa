@@ -1,6 +1,7 @@
 /* Fluent UI v9 styles components via Griffel (CSS-in-JS).
-   Global CSS stays minimal: a reset and full-height shell only.
-   All colors, typography, and spacing come from Fluent design tokens. */
+   Global CSS stays minimal: a reset, full-height shell, and the shared
+   "glow/pulse/trace" keyframe vocabulary that every component reuses by name
+   (idle = matte + flat, active/live = glowing + animated). */
 
 html,
 body {
@@ -9,10 +10,80 @@ body {
   height: 100%;
 }
 
+body {
+  font-family: var(--font-sans), 'Inter', 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+}
+
 * {
   box-sizing: border-box;
 }
 
 #__fluent-root {
   min-height: 100vh;
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared electrical motion vocabulary                                 */
+/* ------------------------------------------------------------------ */
+
+/* A soft breathing glow — "this element is live / current is flowing". */
+@keyframes trace-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 4px rgba(255, 45, 45, 0.35);
+    opacity: 0.85;
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(255, 45, 45, 0.7), 0 0 5px rgba(255, 92, 77, 0.85);
+    opacity: 1;
+  }
+}
+
+/* A bright point of light traveling along a border/line (streaming, active
+   underline, wire carrying current). Applied to a wide gradient background. */
+@keyframes trace-travel {
+  0% {
+    background-position: -140% 0;
+  }
+  100% {
+    background-position: 240% 0;
+  }
+}
+
+/* Status LED heartbeat — a fast, slightly snappy blink (relay/LED switch-on). */
+@keyframes led-blink {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 8px 1px currentColor;
+  }
+  45% {
+    opacity: 0.45;
+    box-shadow: 0 0 3px 0 currentColor;
+  }
+}
+
+/* A tiny three-segment "thinking" trace that fills left-to-right. */
+@keyframes trace-scan {
+  0% {
+    transform: scaleX(0.05);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleX(0.05);
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

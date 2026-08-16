@@ -7,6 +7,7 @@ import * as THREE from 'three'
 import { getComponent, type ShapeKind } from '@/lib/electronics-data'
 import { ComponentShape, getPinAnchors } from '@/components/lab/component-mesh'
 import type { CircuitReport, PlacedInstance, Wire, WireEnd } from '@/lib/circuit-engine'
+import { SIGNAL, COPPER, STATUS } from '@/lib/theme'
 
 interface SceneProps {
   placed: PlacedInstance[]
@@ -20,6 +21,7 @@ interface SceneProps {
   onSelect: (id: string) => void
   onPinClick: (instanceId: string, pinIndex: number) => void
   onMove: (id: string, pos: [number, number, number]) => void
+  onRemove: (id: string) => void
   onDragStateChange: (dragging: boolean) => void
   onDeselect: () => void
   onDeleteWire: (id: string) => void
@@ -29,6 +31,12 @@ interface SceneProps {
 const DRAG_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
 const SNAP = 0.25
 const snap = (v: number) => Math.round(v / SNAP) * SNAP
+
+// Placement bounds of the board surface, and how far past the edge a component
+// must be dragged before it counts as "off the board" and gets removed.
+const BOARD_X = 5.5
+const BOARD_Z = 3.5
+const REMOVE_MARGIN = 0.9
 
 const WIRE_COLORS = ['#e5484d', '#f5b301', '#3ba55d', '#4ea1ff', '#c084fc', '#e8eefb']
 
@@ -100,10 +108,10 @@ function useBreadboardTexture() {
     ctx.fillStyle = 'rgba(0,0,0,0.10)'
     ctx.fillRect(0, c.height / 2 - 26, c.width, 52)
     // hole grid
-    ctx.fillStyle = '#3a3730'
     const startX = 70
     const stepX = (c.width - 140) / 30
     const rows = [110, 150, 190, 230, 270, c.height - 270, c.height - 230, c.height - 190, c.height - 150, c.height - 110]
+    ctx.fillStyle = '#3a3730'
     for (let i = 0; i <= 30; i++) {
       for (const ry of rows) {
         ctx.beginPath()
@@ -111,6 +119,46 @@ function useBreadboardTexture() {
         ctx.fill()
       }
     }
+
+    // --- printed markings, like a real breadboard ---
+    ctx.fillStyle = '#4a453a'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+
+    // Column numbers (1..30) printed above the top block and below the bottom block.
+    ctx.font = 'bold 15px "Segoe UI", Arial, sans-serif'
+    const topNumY = rows[0] - 30
+    const botNumY = rows[rows.length - 1] + 30
+    for (let i = 0; i <= 30; i++) {
+      const col = i + 1
+      // Print 1, then every 5th column, matching real breadboard labelling.
+      if (col === 1 || col % 5 === 0) {
+        const x = startX + i * stepX
+        ctx.fillText(String(col), x, topNumY)
+        ctx.fillText(String(col), x, botNumY)
+      }
+    }
+
+    // Row letters: a-e for the top block, f-j for the bottom block, on both sides.
+    ctx.font = 'bold 16px "Segoe UI", Arial, sans-serif'
+    const rowLetters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j']
+    const leftX = startX - 34
+    const rightX = startX + 30 * stepX + 34
+    rows.forEach((ry, idx) => {
+      const letter = rowLetters[idx]
+      ctx.fillText(letter, leftX, ry)
+      ctx.fillText(letter, rightX, ry)
+    })
+
+    // Power-rail +/- markers next to the coloured rails.
+    ctx.font = 'bold 20px "Segoe UI", Arial, sans-serif'
+    ctx.fillStyle = '#d94b4b'
+    ctx.fillText('+', 40, 46)
+    ctx.fillText('+', 40, c.height - 72)
+    ctx.fillStyle = '#3b6fd9'
+    ctx.fillText('-', 40, 72)
+    ctx.fillText('-', 40, c.height - 46)
+
     const tex = new THREE.CanvasTexture(c)
     tex.anisotropy = 4
     tex.needsUpdate = true
@@ -145,16 +193,49 @@ function Breadboard() {
   )
 }
 
+/** Live current state of a wire, derived from the circuit-engine report. */
+type WirePower = 'off' | 'active' | 'warning' | 'error'
+
+const WIRE_STATE_COLOR: Record<WirePower, THREE.Color> = {
+  off: new THREE.Color(COPPER.idle),
+  active: new THREE.Color(SIGNAL.red),
+  warning: new THREE.Color(STATUS.warning),
+  error: new THREE.Color(STATUS.error),
+}
+const WIRE_HOVER_COLOR = new THREE.Color('#ffffff')
+
+/**
+ * Derives a wire's live current state from the circuit-engine report: a wire
+ * inherits the "worst" state of the two components it joins (error > warning >
+ * active), so a short/backwards part flashes its wires red-orange, an
+ * unprotected LED tints its wires amber, and a healthy loop pulses signal-red.
+ * Only meaningful while the simulation is running; idle wires stay copper.
+ */
+function wirePowerFor(w: Wire, report: CircuitReport, running: boolean): WirePower {
+  if (!running) return 'off'
+  const a = report.states[w.from.instanceId]
+  const b = report.states[w.to.instanceId]
+  if (!a || !b) return 'off'
+  if (a.status === 'error' || b.status === 'error') return 'error'
+  if (a.status === 'warning' || b.status === 'warning') return 'warning'
+  if (a.status === 'active' && b.status === 'active') return 'active'
+  return 'off'
+}
+
 function WireTube({
   start,
   end,
   color,
+  power,
   interactive,
   onDelete,
 }: {
   start: Vec3
   end: Vec3
+  /** Idle jumper color, shown while editing (sim not running). */
   color: string
+  /** Live current state while the simulation is running. */
+  power: WirePower
   interactive: boolean
   onDelete: () => void
 }) {
@@ -169,8 +250,53 @@ function WireTube({
   }, [start, end])
 
   const [hovered, setHovered] = React.useState(false)
+  const matRef = React.useRef<THREE.MeshStandardMaterial>(null)
+  const endMatRef = React.useRef<THREE.MeshStandardMaterial>(null)
+  // Idle jumper color while editing so wires stay distinguishable.
+  const idleColor = React.useMemo(() => new THREE.Color(color), [color])
 
   React.useEffect(() => () => geometry.dispose(), [geometry])
+
+  useFrame((state) => {
+    const mat = matRef.current
+    if (!mat) return
+    const t = state.clock.elapsedTime
+
+    if (hovered) {
+      mat.color.copy(WIRE_HOVER_COLOR)
+      mat.emissive.copy(WIRE_HOVER_COLOR)
+      mat.emissiveIntensity = 0.55
+    } else if (power === 'off') {
+      // Idle: flat jumper color, no glow. (matte copper once powered-down loop)
+      mat.color.copy(idleColor)
+      mat.emissive.setRGB(0, 0, 0)
+      mat.emissiveIntensity = 0
+    } else {
+      const c = WIRE_STATE_COLOR[power]
+      mat.color.copy(c)
+      mat.emissive.copy(c)
+      // Breathing pulse for active/warning; a sharp fast flash for error.
+      if (power === 'error') {
+        mat.emissiveIntensity = 0.5 + (Math.sin(t * 18) > 0 ? 1.1 : 0.2)
+      } else if (power === 'warning') {
+        mat.emissiveIntensity = 0.45 + (Math.sin(t * 4) * 0.5 + 0.5) * 0.5
+      } else {
+        mat.emissiveIntensity = 0.6 + (Math.sin(t * 7) * 0.5 + 0.5) * 0.7
+      }
+    }
+
+    const em = endMatRef.current
+    if (em) {
+      if (power === 'off' || hovered) {
+        em.emissiveIntensity = hovered ? 0.4 : 0
+      } else {
+        em.emissive.copy(WIRE_STATE_COLOR[power])
+        em.emissiveIntensity = mat.emissiveIntensity * 0.8
+      }
+    }
+  })
+
+  const live = power !== 'off'
 
   return (
     <group>
@@ -200,17 +326,26 @@ function WireTube({
         }}
       >
         <meshStandardMaterial
-          color={hovered ? '#ffffff' : color}
-          emissive={hovered ? '#ffffff' : '#000000'}
-          emissiveIntensity={hovered ? 0.55 : 0}
+          ref={matRef}
+          color={color}
+          emissive={'#000000'}
+          emissiveIntensity={0}
           roughness={0.35}
           metalness={0.1}
+          toneMapped={!live}
         />
       </mesh>
       {[start, end].map((p, i) => (
         <mesh key={i} position={p}>
           <sphereGeometry args={[0.07, 12, 12]} />
-          <meshStandardMaterial color="#111827" metalness={0.5} roughness={0.4} />
+          <meshStandardMaterial
+            ref={i === 0 ? endMatRef : undefined}
+            color="#111827"
+            emissive={SIGNAL.red}
+            emissiveIntensity={0}
+            metalness={0.5}
+            roughness={0.4}
+          />
         </mesh>
       ))}
     </group>
@@ -261,6 +396,7 @@ function Draggable({
   position,
   enabled,
   onMove,
+  onRemove,
   onSelect,
   onActivate,
   onDragStateChange,
@@ -269,6 +405,7 @@ function Draggable({
   position: Vec3
   enabled: boolean
   onMove: (pos: Vec3) => void
+  onRemove: () => void
   onSelect: () => void
   onActivate?: () => void
   onDragStateChange: (dragging: boolean) => void
@@ -277,10 +414,15 @@ function Draggable({
   const { camera, gl } = useThree()
   const draggingRef = React.useRef(false)
   const movedRef = React.useRef(false)
+  const outsideRef = React.useRef(false)
+  const lastPosRef = React.useRef<Vec3>(position)
   const raycaster = React.useMemo(() => new THREE.Raycaster(), [])
   const pointer = React.useMemo(() => new THREE.Vector2(), [])
   const intersection = React.useMemo(() => new THREE.Vector3(), [])
   const [hovered, setHovered] = React.useState(false)
+  // True while the component is being dragged past the board edge — drives the
+  // red "release to remove" feedback.
+  const [markedForRemoval, setMarkedForRemoval] = React.useState(false)
 
   React.useEffect(() => {
     if (!enabled) return
@@ -294,9 +436,22 @@ function Draggable({
       pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
       raycaster.setFromCamera(pointer, camera)
       if (raycaster.ray.intersectPlane(DRAG_PLANE, intersection)) {
-        const clampedX = Math.max(-5.5, Math.min(5.5, snap(intersection.x)))
-        const clampedZ = Math.max(-3.5, Math.min(3.5, snap(intersection.z)))
-        onMove([clampedX, 0, clampedZ])
+        const rawX = snap(intersection.x)
+        const rawZ = snap(intersection.z)
+        const outside =
+          rawX < -(BOARD_X + REMOVE_MARGIN) ||
+          rawX > BOARD_X + REMOVE_MARGIN ||
+          rawZ < -(BOARD_Z + REMOVE_MARGIN) ||
+          rawZ > BOARD_Z + REMOVE_MARGIN
+        outsideRef.current = outside
+        setMarkedForRemoval(outside)
+        document.body.style.cursor = outside ? 'not-allowed' : 'grabbing'
+        // Let the component follow the cursor slightly past the edge (so it
+        // visibly lifts off the board) but keep it within a sane range.
+        const followX = Math.max(-(BOARD_X + REMOVE_MARGIN + 0.5), Math.min(BOARD_X + REMOVE_MARGIN + 0.5, rawX))
+        const followZ = Math.max(-(BOARD_Z + REMOVE_MARGIN + 0.5), Math.min(BOARD_Z + REMOVE_MARGIN + 0.5, rawZ))
+        lastPosRef.current = [followX, 0, followZ]
+        onMove([followX, 0, followZ])
       }
     }
     const handleUp = () => {
@@ -304,6 +459,19 @@ function Draggable({
       draggingRef.current = false
       onDragStateChange(false)
       document.body.style.cursor = 'auto'
+      if (outsideRef.current) {
+        onRemove()
+      } else {
+        // Snap the final resting position back onto the board bounds.
+        const [x, , z] = lastPosRef.current
+        onMove([
+          Math.max(-BOARD_X, Math.min(BOARD_X, x)),
+          0,
+          Math.max(-BOARD_Z, Math.min(BOARD_Z, z)),
+        ])
+      }
+      outsideRef.current = false
+      setMarkedForRemoval(false)
     }
 
     window.addEventListener('pointermove', handleMove)
@@ -312,7 +480,7 @@ function Draggable({
       window.removeEventListener('pointermove', handleMove)
       window.removeEventListener('pointerup', handleUp)
     }
-  }, [enabled, camera, gl, onMove, onDragStateChange, raycaster, pointer, intersection])
+  }, [enabled, camera, gl, onMove, onRemove, onDragStateChange, raycaster, pointer, intersection])
 
   return (
     <group
@@ -323,6 +491,7 @@ function Draggable({
         onSelect()
         if (enabled) {
           draggingRef.current = true
+          lastPosRef.current = position
           onDragStateChange(true)
           document.body.style.cursor = 'grabbing'
         }
@@ -344,6 +513,28 @@ function Draggable({
       scale={hovered ? 1.03 : 1}
     >
       {children}
+      {markedForRemoval && (
+        <>
+          <SelectionRing color="#e5484d" />
+          <Html position={[0, 1.6, 0]} center distanceFactor={9} pointerEvents="none">
+            <div
+              style={{
+                padding: '2px 8px',
+                borderRadius: 6,
+                background: '#e5484d',
+                color: '#ffffff',
+                fontSize: 13,
+                fontWeight: 700,
+                whiteSpace: 'nowrap',
+                fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
+                userSelect: 'none',
+              }}
+            >
+              Release to remove
+            </div>
+          </Html>
+        </>
+      )}
     </group>
   )
 }
@@ -422,11 +613,37 @@ function Pins({
                 document.body.style.cursor = 'auto'
               }}
             >
-              <sphereGeometry args={[0.26, 12, 12]} />
+              <sphereGeometry args={[wireMode ? 0.42 : 0.26, 12, 12]} />
               <meshBasicMaterial transparent opacity={0} depthWrite={false} />
             </mesh>
+            {/* Glow halo so connection points are easy to spot and target in wire mode. */}
+            {wireMode && (
+              <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+                <ringGeometry args={[0.16, 0.26, 28]} />
+                <meshBasicMaterial
+                  color={isPending ? '#ffd34d' : isHovered ? '#ffffff' : '#f5b301'}
+                  transparent
+                  opacity={isPending ? 0.95 : isHovered ? 0.9 : 0.55}
+                  side={THREE.DoubleSide}
+                  toneMapped={false}
+                  depthWrite={false}
+                />
+              </mesh>
+            )}
             <mesh
-              scale={isPending ? 1.9 : isHovered ? 1.55 : 1}
+              scale={
+                isPending
+                  ? wireMode
+                    ? 2.8
+                    : 1.9
+                  : isHovered
+                    ? wireMode
+                      ? 2.4
+                      : 1.55
+                    : wireMode
+                      ? 1.9
+                      : 1
+              }
               onClick={(e: ThreeEvent<MouseEvent>) => {
                 e.stopPropagation()
                 if (wireMode) onPinClick(i)
@@ -504,6 +721,7 @@ export function LabScene({
   onSelect,
   onPinClick,
   onMove,
+  onRemove,
   onDragStateChange,
   onDeselect,
   onDeleteWire,
@@ -557,7 +775,7 @@ export function LabScene({
       {/* Procedural studio env for real reflections on metal/plastic.
           Renders once (frames={1}); no HDRI network fetch. */}
       <Environment resolution={256} frames={1}>
-        <color attach="background" args={['#0a0f1a']} />
+        <color attach="background" args={['#0b0d0f']} />
         <Lightformer
           intensity={1.4}
           position={[0, 6, 0]}
@@ -587,6 +805,7 @@ export function LabScene({
             start={start}
             end={end}
             color={WIRE_COLORS[idx % WIRE_COLORS.length]}
+            power={wirePowerFor(w, report, running)}
             interactive={mode === 'wire'}
             onDelete={() => onDeleteWire(w.id)}
           />
@@ -613,6 +832,7 @@ export function LabScene({
           const st = report.states[inst.instanceId]
           const isError = st?.status === 'error'
           const isWarning = st?.status === 'warning'
+          const isActive = running && st?.status === 'active'
           const lit = running && !!st?.lit
           const isPressed = def.id === 'button' && pressedIds.has(inst.instanceId)
           return (
@@ -621,6 +841,7 @@ export function LabScene({
               position={inst.position}
               enabled={mode === 'move'}
               onMove={(pos) => onMove(inst.instanceId, pos)}
+              onRemove={() => onRemove(inst.instanceId)}
               onSelect={() => onSelect(inst.instanceId)}
               onActivate={def.id === 'button' ? () => onTogglePress(inst.instanceId) : undefined}
               onDragStateChange={handleDragState}
@@ -641,8 +862,11 @@ export function LabScene({
                 pending={pendingWire}
                 onPinClick={(pinIndex) => onPinClick(inst.instanceId, pinIndex)}
               />
-              {isError && <SelectionRing color="#e5484d" />}
-              {isWarning && !isError && <SelectionRing color="#f5b301" />}
+              {isError && <SelectionRing color={STATUS.error} />}
+              {isWarning && !isError && <SelectionRing color={STATUS.warning} />}
+              {isActive && !isError && !isWarning && !isSelected && (
+                <SelectionRing color={SIGNAL.red} />
+              )}
               {isSelected && !isError && !isWarning && <SelectionRing color="#4ea1ff" />}
             </Draggable>
           )

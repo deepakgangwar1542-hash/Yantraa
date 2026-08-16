@@ -38,6 +38,7 @@ import {
   type WireEnd,
 } from '@/lib/circuit-engine'
 import { useHandControl } from '@/components/hand-control'
+import { PCB, MONO_STACK, GLOW, STATUS } from '@/lib/theme'
 
 const LabScene = dynamic(
   () => import('@/components/lab/lab-scene').then((m) => m.LabScene),
@@ -51,7 +52,9 @@ const LabScene = dynamic(
           display: 'grid',
           placeItems: 'center',
           color: '#7a8aa5',
-          backgroundColor: '#0b1220',
+          backgroundColor: '#0b0d0f',
+          fontFamily: MONO_STACK,
+          letterSpacing: '0.08em',
         }}
       >
         Loading 3D lab&hellip;
@@ -66,7 +69,7 @@ const useStyles = makeStyles({
     height: '100%',
     width: '100%',
     overflow: 'hidden',
-    backgroundColor: '#0b1220',
+    backgroundColor: PCB.base,
   },
   canvasWrap: {
     position: 'absolute',
@@ -80,9 +83,9 @@ const useStyles = makeStyles({
     maxHeight: 'calc(100% - 32px)',
     display: 'flex',
     flexDirection: 'column',
-    borderRadius: tokens.borderRadiusXLarge,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-    backgroundColor: 'rgba(17, 28, 46, 0.82)',
+    borderRadius: '6px',
+    border: `1px solid ${PCB.strokeRed}`,
+    backgroundColor: 'rgba(18, 20, 23, 0.9)',
     backdropFilter: 'blur(12px)',
     overflow: 'hidden',
   },
@@ -117,7 +120,7 @@ const useStyles = makeStyles({
     cursor: 'pointer',
     textAlign: 'left',
     ':hover': {
-      backgroundColor: 'rgba(78, 161, 255, 0.14)',
+      backgroundColor: 'rgba(255, 45, 45, 0.12)',
     },
   },
   swatch: {
@@ -152,9 +155,9 @@ const useStyles = makeStyles({
     alignItems: 'center',
     gap: tokens.spacingHorizontalXS,
     padding: tokens.spacingHorizontalXS,
-    borderRadius: tokens.borderRadiusLarge,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-    backgroundColor: 'rgba(17, 28, 46, 0.82)',
+    borderRadius: '6px',
+    border: `1px solid ${PCB.strokeRed}`,
+    backgroundColor: 'rgba(18, 20, 23, 0.9)',
     backdropFilter: 'blur(12px)',
   },
   spacer: {
@@ -173,9 +176,9 @@ const useStyles = makeStyles({
     flexDirection: 'column',
     gap: tokens.spacingVerticalXS,
     padding: tokens.spacingHorizontalM,
-    borderRadius: tokens.borderRadiusXLarge,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-    backgroundColor: 'rgba(17, 28, 46, 0.9)',
+    borderRadius: '6px',
+    border: `1px solid ${PCB.strokeRed}`,
+    backgroundColor: 'rgba(18, 20, 23, 0.94)',
     backdropFilter: 'blur(12px)',
     color: '#e8eefb',
   },
@@ -201,10 +204,10 @@ const useStyles = makeStyles({
     paddingRight: tokens.spacingHorizontalM,
     paddingTop: tokens.spacingVerticalXS,
     paddingBottom: tokens.spacingVerticalXS,
-    borderRadius: tokens.borderRadiusCircular,
-    backgroundColor: 'rgba(17, 28, 46, 0.82)',
+    borderRadius: '5px',
+    backgroundColor: 'rgba(18, 20, 23, 0.9)',
     backdropFilter: 'blur(12px)',
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    border: `1px solid ${PCB.strokeRed}`,
     color: '#c7d3ea',
     maxWidth: '80%',
   },
@@ -230,9 +233,9 @@ const useStyles = makeStyles({
     maxHeight: 'calc(100% - 140px)',
     display: 'flex',
     flexDirection: 'column',
-    borderRadius: tokens.borderRadiusXLarge,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-    backgroundColor: 'rgba(17, 28, 46, 0.88)',
+    borderRadius: '6px',
+    border: `1px solid ${PCB.strokeRed}`,
+    backgroundColor: 'rgba(18, 20, 23, 0.92)',
     backdropFilter: 'blur(12px)',
     overflow: 'hidden',
     color: '#e8eefb',
@@ -382,18 +385,22 @@ export function SpatialLab() {
     setSelectedId(instanceId)
   }, [])
 
-  const deleteSelected = React.useCallback(() => {
-    if (!selectedId) return
-    setPlaced((prev) => prev.filter((p) => p.instanceId !== selectedId))
-    setWires((prev) => prev.filter((w) => w.from.instanceId !== selectedId && w.to.instanceId !== selectedId))
+  const deleteInstance = React.useCallback((id: string) => {
+    setPlaced((prev) => prev.filter((p) => p.instanceId !== id))
+    setWires((prev) => prev.filter((w) => w.from.instanceId !== id && w.to.instanceId !== id))
     setPressedIds((prev) => {
       const next = new Set(prev)
-      next.delete(selectedId)
+      next.delete(id)
       return next
     })
-    setSelectedId(null)
+    setSelectedId((cur) => (cur === id ? null : cur))
     setPendingWire(null)
-  }, [selectedId])
+  }, [])
+
+  const deleteSelected = React.useCallback(() => {
+    if (!selectedId) return
+    deleteInstance(selectedId)
+  }, [selectedId, deleteInstance])
 
   const clearAll = React.useCallback(() => {
     setPlaced([])
@@ -464,6 +471,7 @@ export function SpatialLab() {
           onSelect={handleSelect}
           onPinClick={handlePinClick}
           onMove={handleMove}
+          onRemove={deleteInstance}
           onDragStateChange={() => {}}
           onDeselect={() => {
             setSelectedId(null)
@@ -503,7 +511,7 @@ export function SpatialLab() {
                 <span className={styles.itemName}>{c.name}</span>
                 <Caption1 style={{ color: '#8496b5' }}>{c.category}</Caption1>
               </span>
-              <Add20Regular style={{ color: '#4ea1ff', flexShrink: 0 }} />
+              <Add20Regular style={{ color: tokens.colorBrandForeground1, flexShrink: 0 }} />
             </button>
           ))}
         </div>
@@ -542,8 +550,9 @@ export function SpatialLab() {
             icon={running ? <Stop20Regular /> : <Play20Regular />}
             onClick={() => setRunning((r) => !r)}
             disabled={placed.length === 0}
+            style={running ? { boxShadow: GLOW.md } : undefined}
           >
-            {running ? 'Stop' : 'Run'}
+            {running ? 'Live' : 'Run'}
           </ToggleButton>
         </Tooltip>
         <span className={styles.spacer} />
@@ -618,9 +627,9 @@ export function SpatialLab() {
               style={{
                 color:
                   selectedState.status === 'error'
-                    ? '#ff8a8a'
+                    ? STATUS.error
                     : selectedState.status === 'warning'
-                      ? '#ffd166'
+                      ? STATUS.warning
                       : '#8ecbff',
               }}
             >
@@ -643,7 +652,17 @@ export function SpatialLab() {
       {placed.length > 0 && (
         <div className={styles.checkPanel}>
           <div className={styles.checkHead}>
-            <Subtitle2 style={{ color: '#e8eefb' }}>Circuit check</Subtitle2>
+            <Subtitle2
+              style={{
+                color: '#e8eefb',
+                fontFamily: MONO_STACK,
+                fontSize: '12px',
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Circuit check
+            </Subtitle2>
             <Badge appearance="filled" color={checkBadge.color}>
               {checkBadge.text}
             </Badge>

@@ -168,7 +168,7 @@ function Rig() {
 
 export function AmbientBackground() {
   const { mode } = useThemeMode()
-  const accent = mode === 'dark' ? '#4fd1c5' : '#0e7490'
+  const accent = mode === 'dark' ? '#E0112C' : '#B00020'
 
   return (
     <div

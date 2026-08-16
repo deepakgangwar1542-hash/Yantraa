@@ -130,6 +130,35 @@ const useStyles = makeStyles({
     right: tokens.spacingHorizontalM,
   },
 
+  /** Pins show/hide toggle, bottom-left of the canvas. */
+  pinsToggle: {
+    position: 'absolute',
+    bottom: tokens.spacingVerticalL,
+    left: tokens.spacingHorizontalL,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '7px',
+    padding: '6px 13px',
+    borderRadius: '999px',
+    background: 'rgba(11,18,32,0.82)',
+    backdropFilter: 'blur(8px)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    color: '#c7d3ea',
+    fontSize: '12px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
+    userSelect: 'none',
+    transition: 'border-color 120ms ease, color 120ms ease',
+  },
+  pinsDot: {
+    width: '9px',
+    height: '9px',
+    borderRadius: '50%',
+    background: '#f5b301',
+    boxShadow: '0 0 6px #f5b301',
+  },
+
   /** Hint pill at the bottom of the canvas. */
   hintBadge: {
     position: 'absolute',
@@ -314,6 +343,7 @@ export function ComponentModal({
 }) {
   const styles = useStyles()
   const [resetSignal, setResetSignal] = React.useState(0)
+  const [showPins, setShowPins] = React.useState(true)
 
   /* Close on Escape */
   React.useEffect(() => {
@@ -360,8 +390,10 @@ export function ComponentModal({
               shape={c.shape}
               color={c.color}
               size="modal"
-              autoRotateSpeed={1.4}
+              autoRotateSpeed={showPins ? 0.5 : 1.4}
               resetSignal={resetSignal}
+              pins={c.pins}
+              showPins={showPins}
             />
           </Canvas>
 
@@ -391,6 +423,21 @@ export function ComponentModal({
           <div className={styles.hintBadge}>
             Drag to orbit · Scroll to zoom · Double-click to reset
           </div>
+
+          {/* Pins / wiring toggle */}
+          <button
+            type="button"
+            className={styles.pinsToggle}
+            style={showPins ? { borderColor: '#f5b301', color: '#ffe6a3' } : undefined}
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowPins((v) => !v)
+            }}
+            aria-pressed={showPins}
+          >
+            <span className={styles.pinsDot} style={{ opacity: showPins ? 1 : 0.35 }} />
+            {showPins ? 'Hide pins' : 'Show pins'}
+          </button>
         </div>
 
         {/* ── Right: info panel ── */}

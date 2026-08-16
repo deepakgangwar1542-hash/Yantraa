@@ -12,6 +12,7 @@ export type ShapeKind =
   | 'ic'
   | 'register'
   | 'board'
+  | 'esp32'
   | 'sensor'
   | 'buzzer'
   | 'breadboard'
@@ -326,6 +327,30 @@ export const COMPONENTS: ElectronicsComponent[] = [
     uses: ['Robotics', 'Home automation', 'Data logging & IoT'],
     funFact: 'Arduino was created in Italy in 2005 to help design students learn electronics.',
     symbol: 'MCU',
+  },
+  {
+    id: 'esp32',
+    name: 'ESP32',
+    category: 'Microcontroller',
+    difficulty: 'Advanced',
+    color: '#1b2430',
+    shape: 'esp32',
+    tagline: 'Wi-Fi + Bluetooth microcontroller',
+    summary:
+      'The ESP32 is a powerful, low-cost microcontroller with built-in Wi-Fi and Bluetooth. Its dual-core processor and dozens of GPIO pins make it the go-to brain for connected IoT projects.',
+    howItWorks:
+      'A dual-core Xtensa CPU runs your firmware while an integrated radio handles Wi-Fi and Bluetooth. The silver metal can shields the RF circuitry, and most GPIO pins can be freely remapped to peripherals like I2C, SPI, PWM, and ADC.',
+    pins: [
+      { name: '3V3', role: 'Regulated 3.3V power out', polarity: 'positive' },
+      { name: 'GND', role: 'Ground / return', polarity: 'negative' },
+      { name: 'GPIO2', role: 'Digital I/O (onboard LED)' },
+      { name: 'VIN', role: '5V input from USB / battery', polarity: 'positive' },
+      { name: 'EN', role: 'Chip enable / reset' },
+      { name: 'GPIO4', role: 'Digital I/O (ADC / touch capable)' },
+    ],
+    uses: ['Wi-Fi & Bluetooth IoT devices', 'Smart home controllers', 'Battery-powered sensors'],
+    funFact: 'The ESP32 runs two CPU cores at up to 240 MHz \u2014 yet often costs only a few dollars.',
+    symbol: 'ESP',
   },
 ]
 

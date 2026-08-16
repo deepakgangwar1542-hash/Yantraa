@@ -131,6 +131,16 @@ export const PIN_ANCHORS: Record<ShapeKind, [number, number, number][]> = {
     [0.4, 0.36, 0.78],
     [1.0, 0.36, 0.78],
   ],
+  // ESP32 dev board: long and narrow, header pins down both long sides.
+  // Left side (3V3, GND, GPIO2) then right side (VIN, EN, GPIO4).
+  esp32: [
+    [-0.62, 0.34, -0.7],
+    [-0.62, 0.34, 0],
+    [-0.62, 0.34, 0.7],
+    [0.62, 0.34, -0.7],
+    [0.62, 0.34, 0],
+    [0.62, 0.34, 0.7],
+  ],
   breadboard: [
     [-0.5, 0.22, 0],
     [0.5, 0.22, 0],
@@ -331,6 +341,83 @@ function ArduinoBoard({ color }: { color: string }) {
       {[0.78, -0.78].map((z) =>
         [-0.8, -0.5, -0.2, 0.1, 0.4, 0.7, 1.0].map((x) => (
           <mesh key={`${z}-${x}`} position={[x, 0.31, z]} castShadow>
+            <boxGeometry args={[0.05, 0.08, 0.05]} />
+            <meshStandardMaterial {...METAL_GOLD} />
+          </mesh>
+        )),
+      )}
+    </group>
+  )
+}
+
+function Esp32Board({ color }: { color: string }) {
+  // Header rows run along the two long sides at x = ±0.62.
+  const pinZ = [-0.9, -0.6, -0.3, 0, 0.3, 0.6, 0.9]
+  return (
+    <group>
+      {/* long narrow PCB */}
+      <RoundedBox
+        args={[1.5, 0.12, 2.6]}
+        radius={0.05}
+        smoothness={4}
+        position={[0, 0.12, 0]}
+        castShadow
+        receiveShadow
+      >
+        <meshStandardMaterial color={color} roughness={0.55} metalness={0.2} />
+      </RoundedBox>
+      {/* silver RF shield can (the ESP32 module) */}
+      <RoundedBox
+        args={[1.0, 0.16, 1.05]}
+        radius={0.02}
+        smoothness={3}
+        position={[0, 0.26, 0.62]}
+        castShadow
+      >
+        <meshStandardMaterial {...METAL_BRIGHT} />
+      </RoundedBox>
+      {/* etched keepout hint on the shield */}
+      <mesh position={[0, 0.345, 0.62]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[0.8, 0.85]} />
+        <meshStandardMaterial color="#9aa3b0" roughness={0.4} metalness={0.6} transparent opacity={0.5} />
+      </mesh>
+      {/* PCB antenna trace at the top end */}
+      <mesh position={[0, 0.185, 1.18]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[0.9, 0.28]} />
+        <meshStandardMaterial color="#c9a24a" roughness={0.45} metalness={0.5} />
+      </mesh>
+      {/* micro-USB port at the bottom end */}
+      <mesh position={[0, 0.2, -1.2]} castShadow>
+        <boxGeometry args={[0.42, 0.16, 0.28]} />
+        <meshStandardMaterial {...METAL_DARK} color="#cfd4dc" metalness={0.92} roughness={0.22} />
+      </mesh>
+      {/* voltage regulator + a couple of SMD chips */}
+      <mesh position={[-0.28, 0.19, -0.78]} castShadow>
+        <boxGeometry args={[0.22, 0.1, 0.16]} />
+        <meshStandardMaterial color="#0d1119" roughness={0.5} />
+      </mesh>
+      <mesh position={[0.3, 0.185, -0.78]} castShadow>
+        <boxGeometry args={[0.16, 0.08, 0.12]} />
+        <meshStandardMaterial color="#12161f" roughness={0.5} />
+      </mesh>
+      {/* EN and BOOT buttons flanking the USB */}
+      {[-0.4, 0.4].map((x) => (
+        <mesh key={x} position={[x, 0.2, -1.02]} castShadow>
+          <boxGeometry args={[0.16, 0.1, 0.16]} />
+          <PlasticMaterial color="#e8edf3" />
+        </mesh>
+      ))}
+      {/* black header strips on both long sides */}
+      {[-0.62, 0.62].map((x) => (
+        <mesh key={x} position={[x, 0.22, 0]} castShadow>
+          <boxGeometry args={[0.16, 0.14, 2.1]} />
+          <meshStandardMaterial color="#0b0f18" roughness={0.55} />
+        </mesh>
+      ))}
+      {/* gold pin contacts along both headers */}
+      {[-0.62, 0.62].map((x) =>
+        pinZ.map((z) => (
+          <mesh key={`${x}-${z}`} position={[x, 0.31, z]} castShadow>
             <boxGeometry args={[0.05, 0.08, 0.05]} />
             <meshStandardMaterial {...METAL_GOLD} />
           </mesh>
@@ -669,6 +756,8 @@ export function ComponentShape({
       )
     case 'board':
       return <ArduinoBoard color={color} />
+    case 'esp32':
+      return <Esp32Board color={color} />
     case 'breadboard':
     default:
       return (

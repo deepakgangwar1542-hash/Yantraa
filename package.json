@@ -8,6 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@ai-sdk/groq": "^4.0.28",
     "@ai-sdk/react": "^4.0.61",
     "@fluentui/react-components": "^9.74.1",
     "@fluentui/react-icons": "^2.0.329",

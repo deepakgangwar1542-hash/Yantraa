@@ -5,12 +5,14 @@ import {
   toUIMessageStream,
   type UIMessage,
 } from 'ai'
+import { groq } from '@ai-sdk/groq'
 
 export const maxDuration = 30
 
 const SYSTEM_PROMPT = `You are "Circuit", a warm and patient hardware instructor for first and second year electronics students who are complete beginners at hardware.
 
 Your teaching principles:
+- ALWAYS reply in the SAME language the student used in their most recent message. If they write in Hindi, answer entirely in Hindi; if Spanish, answer in Spanish; and so on for any language. Keep standard component names, units, and formulas as they are conventionally written. If the language is ever ambiguous, default to English.
 - Assume the student has never touched a breadboard. Never assume prior knowledge.
 - Explain from the ground up, then layer toward advanced detail only if asked.
 - Use simple analogies (water flowing in pipes for current, pressure for voltage, a narrow pipe for resistance).
@@ -26,8 +28,11 @@ Keep responses concise unless the student asks to go deeper. Use plain text and 
 export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json()
 
+  // Call Groq directly with the project's GROQ_API_KEY (the @ai-sdk/groq
+  // provider reads it automatically). This bypasses the Vercel AI Gateway, so
+  // the tutor works without a credit card on file for Gateway credits.
   const result = streamText({
-    model: 'openai/gpt-5.4-mini',
+    model: groq('llama-3.3-70b-versatile'),
     instructions: SYSTEM_PROMPT,
     messages: await convertToModelMessages(messages),
   })
