@@ -424,6 +424,8 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
   const prevPinchRef = React.useRef(false)
   // Tight-fist → orbit the 3D view (hysteresis so it doesn't flicker).
   const fistOnRef = React.useRef(false)
+  // Timestamp when the fist pose first became continuously held (null = not held).
+  const fistSinceRef = React.useRef<number | null>(null)
   const orbitActiveRef = React.useRef(false)
   const orbitPtrRef = React.useRef({ x: 0, y: 0 })
   const orbitOriginRef = React.useRef({ nx: 0.5, ny: 0.5 })
@@ -576,6 +578,7 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
     // Gesture tuning constants.
     const FIST_ON = 0.1 // orbit engages ONLY on a fully closed fist
     const FIST_OFF = 0.2 // the moment the hand starts opening, orbit releases
+    const FIST_HOLD_MS = 200 // fist must be held this long before orbit engages
     const ZOOM_STEP = 0.07 // openness delta per zoom "notch"
     const TAP_MOVE = 0.03 // hand travel (normalized) below which a pinch counts as a tap
 
@@ -613,6 +616,7 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
         lastOpennessRef.current = null
         prevPinchRef.current = false
         fistOnRef.current = false
+        fistSinceRef.current = null
         return
       }
 
@@ -622,9 +626,25 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
       lastYRef.current = y
       const hovering = document.elementFromPoint(x, y)
 
-      // Fist detection with hysteresis.
-      const fistOn = fistOnRef.current ? p.openness < FIST_OFF : p.openness < FIST_ON
-      fistOnRef.current = fistOn
+      // Raw fist pose from openness, with hysteresis so it doesn't flicker.
+      const fistPoseRaw = fistOnRef.current ? p.openness < FIST_OFF : p.openness < FIST_ON
+      fistOnRef.current = fistPoseRaw
+
+      // A pinch curls the fingers too, so a pinch pose also reads as low openness.
+      // Pinch and any active press ALWAYS win over the fist — otherwise a hand
+      // curling into a pinch to select/drag would be hijacked by the orbit
+      // gesture. This is the key rule that keeps selection working.
+      const fistPose = fistPoseRaw && !p.pinch && !pressActiveRef.current
+
+      // Debounce: only treat it as a real fist once it's been held briefly, so a
+      // transient curl on the way into a pinch can't flash the orbit on.
+      const now = performance.now()
+      if (fistPose) {
+        if (fistSinceRef.current === null) fistSinceRef.current = now
+      } else {
+        fistSinceRef.current = null
+      }
+      const fistOn = fistPose && now - (fistSinceRef.current ?? now) >= FIST_HOLD_MS
 
       // Pinch rising / falling edges (pose.pinch is already hysteresis-debounced).
       const pinchRise = p.pinch && !prevPinchRef.current
