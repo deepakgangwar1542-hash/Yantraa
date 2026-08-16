@@ -17,7 +17,6 @@ import {
   MessageBarBody,
   MessageBarTitle,
   MessageBarActions,
-  Link,
 } from '@fluentui/react-components'
 import {
   Send24Filled,
@@ -354,44 +353,23 @@ export function InstructorChat() {
             </div>
           )}
 
-          {error && !busy && (() => {
-            const msg = error.message || 'Something went wrong contacting the tutor.'
-            const needsCard = /credit card/i.test(msg)
-            const linkMatch = msg.match(/https?:\/\/\S+/)
-            return (
-              <MessageBar intent="error" layout="multiline">
-                <MessageBarBody>
-                  <MessageBarTitle>
-                    {needsCard
-                      ? 'AI tutor is not activated yet'
-                      : 'Circuit could not respond'}
-                  </MessageBarTitle>
-                  {needsCard ? (
-                    <>
-                      {'The AI Gateway needs a valid credit card on file to unlock your free credits. '}
-                      {linkMatch ? (
-                        <Link href={linkMatch[0]} target="_blank" rel="noreferrer">
-                          Add a card to activate the tutor
-                        </Link>
-                      ) : null}
-                      {'. This is a one-time setup and no charge is made until you exceed the free credits.'}
-                    </>
-                  ) : (
-                    msg
-                  )}
-                </MessageBarBody>
-                <MessageBarActions>
-                  <Button
-                    appearance="transparent"
-                    size="small"
-                    onClick={() => regenerate()}
-                  >
-                    Try again
-                  </Button>
-                </MessageBarActions>
-              </MessageBar>
-            )
-          })()}
+          {error && !busy && (
+            <MessageBar intent="error" layout="multiline">
+              <MessageBarBody>
+                <MessageBarTitle>Circuit could not respond</MessageBarTitle>
+                {error.message || 'Something went wrong contacting the tutor. Please try again.'}
+              </MessageBarBody>
+              <MessageBarActions>
+                <Button
+                  appearance="transparent"
+                  size="small"
+                  onClick={() => regenerate()}
+                >
+                  Try again
+                </Button>
+              </MessageBarActions>
+            </MessageBar>
+          )}
         </div>
       </div>
 

@@ -5,6 +5,7 @@ import {
   toUIMessageStream,
   type UIMessage,
 } from 'ai'
+import { groq } from '@ai-sdk/groq'
 
 export const maxDuration = 30
 
@@ -26,8 +27,11 @@ Keep responses concise unless the student asks to go deeper. Use plain text and 
 export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json()
 
+  // Call Groq directly with the project's GROQ_API_KEY (the @ai-sdk/groq
+  // provider reads it automatically). This bypasses the Vercel AI Gateway, so
+  // the tutor works without a credit card on file for Gateway credits.
   const result = streamText({
-    model: 'openai/gpt-5.4-mini',
+    model: groq('llama-3.3-70b-versatile'),
     instructions: SYSTEM_PROMPT,
     messages: await convertToModelMessages(messages),
   })
