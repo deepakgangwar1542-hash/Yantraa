@@ -25,6 +25,8 @@ export const PCB = {
   base: '#0b0d0f',
   panel1: '#121417',
   panel2: '#191b1f',
+  /** Faintly luminous red-tinted hairline used on floating instrument panels. */
+  strokeRed: 'rgba(255,70,58,0.18)',
 } as const
 
 /* --- Copper: the "idle material" (a second material besides red/black) -- */

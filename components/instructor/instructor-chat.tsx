@@ -32,6 +32,7 @@ import {
 } from '@fluentui/react-icons'
 import { ChatMarkdown, messageText } from '@/components/assistant/chat-markdown'
 import { useSpeechRecognition, useSpeechSynthesis } from '@/lib/speech'
+import { SIGNAL, GLOW, MONO_STACK, EASE_ELECTRIC } from '@/lib/theme'
 
 const SUGGESTIONS = [
   'What is Ohm\u2019s Law and why do I need it?',

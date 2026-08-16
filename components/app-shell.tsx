@@ -158,14 +158,21 @@ const useStyles = makeStyles({
     cursor: 'pointer',
     color: tokens.colorNeutralForeground3,
     backgroundColor: 'transparent',
+    transform: 'translateY(0)',
     transitionDuration: tokens.durationNormal,
     transitionProperty: 'color, transform',
     transitionTimingFunction: EASE_ELECTRIC,
     ':hover': {
       color: tokens.colorNeutralForeground1,
+      transform: 'translateY(-2px)',
+    },
+    ':active': {
+      transform: 'translateY(0) scale(0.97)',
     },
     '@media (prefers-reduced-motion: reduce)': {
       transform: 'none',
+      ':hover': { transform: 'none' },
+      ':active': { transform: 'none' },
     },
   },
   // Connector-pad shape wrapping each icon. Idle = matte copper, no glow.
@@ -179,15 +186,8 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralBackground3,
     color: 'inherit',
     transitionDuration: tokens.durationNormal,
-    transitionProperty: 'background-color, color, border-color, box-shadow, transform',
+    transitionProperty: 'background-color, color, border-color, box-shadow',
     transitionTimingFunction: EASE_ELECTRIC,
-    'button:hover &': {
-      border: `1px solid ${COPPER.idleLit}`,
-      transform: 'translateY(-2px)',
-    },
-    'button:active &': {
-      transform: 'translateY(0) scale(0.96)',
-    },
   },
   // Active pad = lit: signal-red border, brand fill, red glow.
   navPadActive: {
@@ -195,10 +195,6 @@ const useStyles = makeStyles({
     backgroundColor: 'rgba(255,45,45,0.12)',
     color: SIGNAL.hot,
     boxShadow: GLOW.md,
-    'button:hover &': {
-      border: `1px solid ${SIGNAL.hot}`,
-      transform: 'translateY(-2px)',
-    },
   },
   navLabel: {
     fontFamily: MONO_STACK,
