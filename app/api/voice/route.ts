@@ -83,7 +83,7 @@ export async function POST(req: Request) {
     }
 
     const { text } = await generateText({
-      model: groq('llama-3.3-70b-versatile'),
+      model: groq('openai/gpt-oss-120b'),
       system: SYSTEM,
       prompt: `${board ? board + '\n\n' : ''}Student said: "${transcript}"\n\nJSON:`,
     })

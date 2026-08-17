@@ -34,7 +34,7 @@ export async function POST(req: Request) {
   // Vercel AI Gateway, so the tutor works without a credit card on file for
   // Gateway credits.
   const result = streamText({
-    model: groq('llama-3.3-70b-versatile'),
+    model: groq('openai/gpt-oss-120b'),
     instructions: SYSTEM_PROMPT,
     messages: await convertToModelMessages(messages),
   })
