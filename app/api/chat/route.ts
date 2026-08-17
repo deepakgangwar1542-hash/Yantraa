@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   const recent = messages.slice(-5)
 
   const result = streamText({
-    model: groqModel('llama-3.1-8b-instant'),
+    model: groqModel('openai/gpt-oss-20b'),
     instructions: SYSTEM_PROMPT,
     messages: await convertToModelMessages(recent),
     maxTokens: 400,

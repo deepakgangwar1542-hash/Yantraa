@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     ].filter(Boolean).join('\n')
 
     const { text } = await generateText({
-      model: groqModel('llama-3.1-8b-instant'),
+      model: groqModel('openai/gpt-oss-20b'),
       system: SYSTEM,
       prompt,
       maxTokens: 300,
