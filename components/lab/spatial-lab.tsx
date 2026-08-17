@@ -89,7 +89,7 @@ const useStyles = makeStyles({
     position: 'absolute',
     top: tokens.spacingVerticalM,
     left: tokens.spacingHorizontalM,
-    width: '234px',
+    width: '292px',
     maxHeight: 'calc(100% - 32px)',
     display: 'flex',
     flexDirection: 'column',
@@ -118,7 +118,7 @@ const useStyles = makeStyles({
   paletteItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: tokens.spacingHorizontalS,
+    gap: tokens.spacingHorizontalM,
     width: '100%',
     paddingLeft: tokens.spacingHorizontalM,
     paddingRight: tokens.spacingHorizontalM,
@@ -153,7 +153,7 @@ const useStyles = makeStyles({
   },
   itemName: {
     fontWeight: tokens.fontWeightSemibold,
-    fontSize: tokens.fontSizeBase200,
+    fontSize: tokens.fontSizeBase300,
     whiteSpace: 'nowrap',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
@@ -760,7 +760,9 @@ export function SpatialLab() {
             <Subtitle2 style={{ color: 'inherit' }}>Components</Subtitle2>
           </div>
           <div className={styles.palette}>
-            {COMPONENTS.map((c) => (
+            {COMPONENTS.filter(
+              (c) => c.id !== 'buzzer' && c.id !== 'ic555' && c.id !== 'register',
+            ).map((c) => (
               <button
                 key={c.id}
                 type="button"
@@ -781,8 +783,10 @@ export function SpatialLab() {
         </div>
       )}
 
-      {/* Toolbar */}
-      <div className={styles.toolbar}>
+      {/* Toolbar — marked as a gesture-select zone: with hand control, hover a
+          function (Move / Wire / Run / Hands) and double-pinch to activate it. */}
+      <div className={styles.toolbar} data-gesture-select-zone>
+
         {guided ? (
           <>
             <span className={styles.guidedTag}>WIRE MODE · LIVE</span>

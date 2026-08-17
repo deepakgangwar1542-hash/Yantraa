@@ -46,7 +46,7 @@ export async function POST(req: Request) {
       model: groq('llama-3.1-8b-instant'),
       system: SYSTEM,
       prompt,
-      maxTokens: 300,
+      maxOutputTokens: 300,
     })
 
     const start = text.indexOf('{')

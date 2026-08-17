@@ -1,5 +1,7 @@
 import { generateText } from 'ai'
-import { groq } from '@ai-sdk/groq'
+import { createGroq } from '@ai-sdk/groq'
+
+const groq = createGroq({ apiKey: process.env.GROQ_API_KEY_2 })
 import { z } from 'zod'
 import { COMPONENT_IDS } from '@/lib/lab-actions'
 
@@ -81,10 +83,10 @@ export async function POST(req: Request) {
     }
 
     const { text } = await generateText({
-      model: groq('llama-3.1-8b-instant'),
+      model: groq('openai/gpt-oss-120b'),
       system: SYSTEM,
       prompt: `${board ? board + '\n\n' : ''}Student said: "${transcript}"\n\nJSON:`,
-      maxTokens: 250,
+      maxOutputTokens: 250,
     })
 
     // Pull the JSON object out of the reply (models occasionally wrap it).

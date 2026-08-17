@@ -15,3 +15,6 @@ node_modules
 .next-preview*/
 .DS_Store
 yantraa final/
+
+# TypeScript incremental build cache (generated; causes merge conflicts)
+*.tsbuildinfo
