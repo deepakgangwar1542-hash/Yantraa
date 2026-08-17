@@ -81,9 +81,10 @@ export async function POST(req: Request) {
     }
 
     const { text } = await generateText({
-      model: groq('llama-3.3-70b-versatile'),
+      model: groq('llama-3.1-8b-instant'),
       system: SYSTEM,
       prompt: `${board ? board + '\n\n' : ''}Student said: "${transcript}"\n\nJSON:`,
+      maxTokens: 250,
     })
 
     // Pull the JSON object out of the reply (models occasionally wrap it).
@@ -107,3 +108,4 @@ export async function POST(req: Request) {
     return Response.json({ actions: [], reply: '', error: message }, { status: 200 })
   }
 }
+

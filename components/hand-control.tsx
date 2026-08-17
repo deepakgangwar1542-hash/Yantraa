@@ -469,59 +469,59 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
       if (landmarker && video && video.readyState >= 2) {
         try {
           const now = performance.now()
-          if (now - lastFrameRef.current > 33) {
-            lastFrameRef.current = now
-            const result = landmarker.detectForVideo(video, now)
-            const hand = result.landmarks?.[0]
-            const p = analyzeHand(hand)
+          // Run detection every rAF frame — no artificial 33 ms cap.
+          // MediaPipe detectForVideo is safe to call each frame; it internally
+          // skips processing if no new video frame is available.
+          lastFrameRef.current = now
+          const result = landmarker.detectForVideo(video, now)
+          const hand = result.landmarks?.[0]
+          const p = analyzeHand(hand)
 
-            // Stable pinch: two thresholds (engage < 0.30, release > 0.46) plus a
-            // 2-frame debounce. This stops the thumb/index pinch from rapidly
-            // toggling when the fingers hover near the trigger distance, which is
-            // what made selecting feel irregular and twitchy.
-            if (p.visible) {
-              const PINCH_ON = 0.3
-              const PINCH_OFF = 0.46
-              const want = pinchOnRef.current ? p.pinchRatio < PINCH_OFF : p.pinchRatio < PINCH_ON
-              if (want !== pinchOnRef.current) {
-                pinchPendingRef.current += 1
-                if (pinchPendingRef.current >= 2) {
-                  pinchOnRef.current = want
-                  pinchPendingRef.current = 0
-                }
-              } else {
+          // Stable pinch: two thresholds (engage < 0.28, release > 0.44) plus a
+          // 2-frame debounce so rapid toggling near threshold is suppressed.
+          if (p.visible) {
+            const PINCH_ON = 0.28
+            const PINCH_OFF = 0.44
+            const want = pinchOnRef.current ? p.pinchRatio < PINCH_OFF : p.pinchRatio < PINCH_ON
+            if (want !== pinchOnRef.current) {
+              pinchPendingRef.current += 1
+              if (pinchPendingRef.current >= 2) {
+                pinchOnRef.current = want
                 pinchPendingRef.current = 0
               }
-              p.pinch = pinchOnRef.current
             } else {
-              pinchOnRef.current = false
               pinchPendingRef.current = 0
             }
-
-            poseRef.current = p
-            if (p.visible) {
-              // Adaptive smoothing (1€-filter style): when the hand is nearly
-              // still we smooth hard to kill jitter, and when it moves fast we
-              // ease off so the cursor stays responsive. A small deadzone stops
-              // the pointer from drifting when you try to hold it in place.
-              const dx = p.x - smoothRef.current.x
-              const dy = p.y - smoothRef.current.y
-              const speed = Math.hypot(dx, dy)
-              // While a pinch is held (selecting / connecting a wire) the fingers
-              // curl and naturally wobble the cursor, so damp movement harder and
-              // widen the deadzone. This keeps the cursor pinned on the target pin
-              // so pinch-to-connect lands reliably instead of slipping off.
-              const pinching = pinchOnRef.current
-              const DEADZONE = pinching ? 0.009 : 0.0035
-              if (speed > DEADZONE) {
-                const alpha = pinching ? clamp(speed * 6, 0.1, 0.32) : clamp(speed * 11, 0.16, 0.6)
-                smoothRef.current.x += dx * alpha
-                smoothRef.current.y += dy * alpha
-              }
-            }
-            drawSkeleton(pipCanvasRef.current, p.visible ? p.landmarks : null)
-            setPose({ ...p, x: smoothRef.current.x, y: smoothRef.current.y })
+            p.pinch = pinchOnRef.current
+          } else {
+            pinchOnRef.current = false
+            pinchPendingRef.current = 0
           }
+
+          poseRef.current = p
+          if (p.visible) {
+            // HIGH-RESPONSIVENESS smoothing: large alpha so the cursor closely
+            // tracks the hand even at moderate speeds. Tiny deadzone only to
+            // suppress sensor noise when the hand is intentionally still.
+            const dx = p.x - smoothRef.current.x
+            const dy = p.y - smoothRef.current.y
+            const speed = Math.hypot(dx, dy)
+            const pinching = pinchOnRef.current
+            // Deadzone: very small so the cursor feels alive. Slightly wider
+            // while pinching to avoid slipping off a component during drag.
+            const DEADZONE = pinching ? 0.004 : 0.001
+            if (speed > DEADZONE) {
+              // Alpha range: 0.45 at rest → 0.95 at fast speed (non-pinch)
+              //              0.25 at rest → 0.55 at fast speed (pinch/drag)
+              const alpha = pinching
+                ? clamp(speed * 14, 0.25, 0.55)
+                : clamp(speed * 22, 0.45, 0.95)
+              smoothRef.current.x += dx * alpha
+              smoothRef.current.y += dy * alpha
+            }
+          }
+          drawSkeleton(pipCanvasRef.current, p.visible ? p.landmarks : null)
+          setPose({ ...p, x: smoothRef.current.x, y: smoothRef.current.y })
         } catch {
           // transient detection errors are ignored; next frame retries
         }
@@ -758,9 +758,17 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
       }
     }
 
-    const interval = window.setInterval(step, 33)
+    // Run gesture synthesis at 60 fps via rAF instead of the old 30 fps
+    // setInterval. This halves the worst-case latency from ~33 ms to ~16 ms
+    // and keeps gesture events in sync with the browser's render loop.
+    let gestureRaf = 0
+    const gestureLoop = () => {
+      step()
+      gestureRaf = requestAnimationFrame(gestureLoop)
+    }
+    gestureRaf = requestAnimationFrame(gestureLoop)
     return () => {
-      window.clearInterval(interval)
+      cancelAnimationFrame(gestureRaf)
       // Hand control is off — restore normal (mouse) camera behavior.
       handOrbit.setOrbitGesture(false)
       handOrbit.setHandActive(false)
