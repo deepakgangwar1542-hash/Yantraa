@@ -512,15 +512,28 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
               // widen the deadzone. This keeps the cursor pinned on the target pin
               // so pinch-to-connect lands reliably instead of slipping off.
               const pinching = pinchOnRef.current
-              const DEADZONE = pinching ? 0.009 : 0.0035
+              const DEADZONE = pinching ? 0.009 : 0.003
               if (speed > DEADZONE) {
-                const alpha = pinching ? clamp(speed * 6, 0.1, 0.32) : clamp(speed * 11, 0.16, 0.6)
+                // Higher alpha lets the cursor catch up to the hand faster, so
+                // tracking feels responsive instead of laggy while the adaptive
+                // curve still smooths slow micro-jitter.
+                const alpha = pinching
+                  ? clamp(speed * 8, 0.14, 0.42)
+                  : clamp(speed * 14, 0.24, 0.85)
                 smoothRef.current.x += dx * alpha
                 smoothRef.current.y += dy * alpha
               }
+              // Sensitivity gain: expand hand travel around the frame center so a
+              // small, comfortable hand motion sweeps the whole screen (fixes the
+              // "too slow" feel). Applied AFTER smoothing so it doesn't amplify
+              // jitter. The pointer synthesis in step() reads these coordinates,
+              // so they MUST be the smoothed + gained values, not the raw ones.
+              const GAIN = 1.35
+              p.x = clamp(0.5 + (smoothRef.current.x - 0.5) * GAIN, 0, 1)
+              p.y = clamp(0.5 + (smoothRef.current.y - 0.5) * GAIN, 0, 1)
             }
             drawSkeleton(pipCanvasRef.current, p.visible ? p.landmarks : null)
-            setPose({ ...p, x: smoothRef.current.x, y: smoothRef.current.y })
+            setPose({ ...p })
           }
         } catch {
           // transient detection errors are ignored; next frame retries
@@ -581,6 +594,13 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
     const FIST_HOLD_MS = 200 // fist must be held this long before orbit engages
     const ZOOM_STEP = 0.07 // openness delta per zoom "notch"
     const TAP_MOVE = 0.03 // hand travel (normalized) below which a pinch counts as a tap
+    const DOUBLE_PINCH_MS = 700 // two pinches within this window activate a "function" control
+
+    // In a gesture-select zone (the lab toolbar, the primary nav rail) a single
+    // pinch only ARMS the control; a SECOND pinch on the same control within
+    // DOUBLE_PINCH_MS activates it. This makes selecting Move / Wire / Run /
+    // Instructor etc. deliberate, so the pointer can pass over them harmlessly.
+    let armedSelect: { el: Element; t: number } | null = null
 
     /** The <canvas> under a screen point, if any (the 3D lab surface). */
     const canvasAt = (px: number, py: number): Element | null => {
@@ -617,6 +637,7 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
         prevPinchRef.current = false
         fistOnRef.current = false
         fistSinceRef.current = null
+        armedSelect = null
         return
       }
 
@@ -744,7 +765,25 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
         dispatchPointer('pointerup', x, y, 0, hovering)
         // Only synthesize a click when the hand stayed put — a drag already
         // delivered its own down/move/up to the pin or component.
-        if (!pressMovedRef.current) dispatchClick(x, y, pressTargetRef.current)
+        if (!pressMovedRef.current) {
+          const target = pressTargetRef.current as Element | null
+          const selectCtl =
+            target?.closest?.('[data-gesture-select-zone] button, [data-gesture-select-zone] a') ??
+            (target?.closest?.('[data-gesture-select-zone]') ? target : null)
+          if (selectCtl) {
+            // Function control → require a double-pinch.
+            const t = performance.now()
+            if (armedSelect && armedSelect.el === selectCtl && t - armedSelect.t < DOUBLE_PINCH_MS) {
+              dispatchClick(x, y, target) // second pinch → activate
+              armedSelect = null
+            } else {
+              armedSelect = { el: selectCtl, t } // first pinch → arm, no activation yet
+            }
+          } else {
+            armedSelect = null
+            dispatchClick(x, y, target) // normal single-pinch click (canvas, palette)
+          }
+        }
         setDown(false)
         setFlash((f) => f + 1)
       } else if (p.pinch && pressActiveRef.current) {
@@ -855,7 +894,7 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
           <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
             {status === 'ready'
               ? pose?.visible
-                ? 'Fist to orbit · two fingers to zoom · pinch to select & wire'
+                ? 'Fist to orbit · two fingers to zoom · pinch to wire · double-pinch a button to select'
                 : 'Show your hand to the camera'
               : status === 'loading'
                 ? 'Loading hand-tracking model…'
@@ -941,7 +980,7 @@ export function HandControlProvider({ children }: { children: React.ReactNode })
                     ? 'Pinch held — drag to move parts or pull a wire'
                     : pose.scroll
                       ? 'Two fingers — move up / down to zoom'
-                      : 'Fist orbits · two fingers zoom · pinch a pin & drag to wire'
+                      : 'Fist orbits · two fingers zoom · pinch to wire · double-pinch a button to select'
                 : 'Move your hand into view'}
             </Text>
           </div>
