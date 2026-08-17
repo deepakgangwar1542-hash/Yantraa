@@ -1,5 +1,5 @@
 import { streamText, convertToModelMessages, createUIMessageStreamResponse, toUIMessageStream, type UIMessage } from 'ai'
-import { groq } from '@ai-sdk/groq'
+import { groqModel } from '@/lib/groq'
 
 export const maxDuration = 30
 
@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   const recent = messages.slice(-5)
 
   const result = streamText({
-    model: groq('llama-3.1-8b-instant'),
+    model: groqModel('llama-3.1-8b-instant'),
     instructions: SYSTEM_PROMPT,
     messages: await convertToModelMessages(recent),
     maxTokens: 400,

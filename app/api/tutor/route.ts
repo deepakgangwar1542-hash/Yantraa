@@ -1,4 +1,4 @@
-import { groq } from '@ai-sdk/groq'
+import { groqModel } from '@/lib/groq'
 import { generateText } from 'ai'
 
 export const maxDuration = 30
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     ].filter(Boolean).join('\n')
 
     const { text } = await generateText({
-      model: groq('llama-3.1-8b-instant'),
+      model: groqModel('llama-3.1-8b-instant'),
       system: SYSTEM,
       prompt,
       maxTokens: 300,

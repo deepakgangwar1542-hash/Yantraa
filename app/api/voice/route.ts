@@ -1,5 +1,5 @@
 import { generateText } from 'ai'
-import { groq } from '@ai-sdk/groq'
+import { groqModel } from '@/lib/groq'
 import { z } from 'zod'
 import { COMPONENT_IDS } from '@/lib/lab-actions'
 
@@ -81,7 +81,7 @@ export async function POST(req: Request) {
     }
 
     const { text } = await generateText({
-      model: groq('llama-3.1-8b-instant'),
+      model: groqModel('llama-3.1-8b-instant'),
       system: SYSTEM,
       prompt: `${board ? board + '\n\n' : ''}Student said: "${transcript}"\n\nJSON:`,
       maxTokens: 250,
