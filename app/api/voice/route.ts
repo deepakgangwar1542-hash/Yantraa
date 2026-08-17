@@ -1,5 +1,7 @@
 import { generateText } from 'ai'
-import { groq } from '@ai-sdk/groq'
+import { createGroq } from '@ai-sdk/groq'
+
+const groq = createGroq({ apiKey: process.env.GROQ_API_KEY_2 })
 import { z } from 'zod'
 import { COMPONENT_IDS } from '@/lib/lab-actions'
 
