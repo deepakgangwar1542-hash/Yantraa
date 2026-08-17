@@ -446,7 +446,7 @@ function AppShellInner() {
     <HandControlProvider>
       <VoiceControlProvider>
       <div className={styles.root}>
-      <nav className={styles.rail} aria-label="Primary">
+      <nav className={styles.rail} aria-label="Primary" data-gesture-select-zone>
         <div className={styles.brand}>
           <span className={styles.brandMark} aria-hidden>
             <Board24Regular />
