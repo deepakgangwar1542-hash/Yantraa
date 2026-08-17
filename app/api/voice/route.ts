@@ -86,6 +86,7 @@ export async function POST(req: Request) {
       model: groq('openai/gpt-oss-120b'),
       system: SYSTEM,
       prompt: `${board ? board + '\n\n' : ''}Student said: "${transcript}"\n\nJSON:`,
+      maxOutputTokens: 250,
     })
 
     // Pull the JSON object out of the reply (models occasionally wrap it).
@@ -109,3 +110,4 @@ export async function POST(req: Request) {
     return Response.json({ actions: [], reply: '', error: message }, { status: 200 })
   }
 }
+

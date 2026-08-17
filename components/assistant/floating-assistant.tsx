@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useChat } from '@ai-sdk/react'
-import { DefaultChatTransport } from 'ai'
+import { DefaultChatTransport, type UIMessage } from 'ai'
 import {
   makeStyles,
   tokens,
@@ -337,7 +337,7 @@ export function FloatingAssistant({ context }: { context: AssistantContext }) {
             </div>
           </div>
         ) : (
-          messages.map((m) => {
+          messages.map((m: UIMessage) => {
             const isUser = m.role === 'user'
             const text = messageText(m)
             return (

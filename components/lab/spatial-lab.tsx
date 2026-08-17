@@ -122,13 +122,14 @@ const useStyles = makeStyles({
     width: '100%',
     paddingLeft: tokens.spacingHorizontalM,
     paddingRight: tokens.spacingHorizontalM,
-    paddingTop: tokens.spacingVerticalS,
-    paddingBottom: tokens.spacingVerticalS,
+    paddingTop: '10px',
+    paddingBottom: '10px',
     border: 'none',
     background: 'transparent',
     color: '#e8eefb',
     cursor: 'pointer',
     textAlign: 'left',
+    minHeight: '52px',
     ':hover': {
       backgroundColor: 'rgba(255, 45, 45, 0.12)',
     },
@@ -140,7 +141,7 @@ const useStyles = makeStyles({
     height: '38px',
     borderRadius: tokens.borderRadiusMedium,
     color: '#fff',
-    fontSize: '11px',
+    fontSize: '12px',
     fontWeight: tokens.fontWeightBold,
     flexShrink: 0,
   },
@@ -775,7 +776,7 @@ export function SpatialLab() {
                   <span className={styles.itemName}>{c.name}</span>
                   <Caption1 style={{ color: '#8496b5' }}>{c.category}</Caption1>
                 </span>
-                <Add20Regular style={{ color: tokens.colorBrandForeground1, flexShrink: 0 }} />
+                <Add20Regular style={{ color: tokens.colorBrandForeground1, flexShrink: 0, fontSize: '28px', width: '28px', height: '28px' }} />
               </button>
             ))}
           </div>
